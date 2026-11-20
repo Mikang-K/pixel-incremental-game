@@ -1,6 +1,19 @@
 # 픽셀 아트 인크리멘탈 게임 기획
 
-상태: 컨셉 미확정. 아래 제안서 4개 중에서 고르거나 섞어서 방향을 정하는 단계.
+상태: 제안 A "색을 잃은 캔버스"를 골라 첫 버전을 구현함. 색을 잃은 명화 22장을 픽셀 한 칸씩 되살리는 게임.
+
+## 실행
+
+- 게임: `index.html`을 브라우저로 연다. 설치할 것이 없다.
+- 검사: `node --test`
+- 속도 확인: `node tools/simulate.js [초당 클릭 수]`. 단계별 소요 시간을 출력한다. 균형 숫자는 `js/config.js`에만 있다.
+- 그림 확인: `tools/preview.html`을 브라우저로 연다.
+
+문서: [설계](docs/superpowers/specs/2026-11-20-lost-canvas-design.md), [구현 계획](docs/superpowers/plans/2026-11-20-lost-canvas.md)
+
+## 처음에 검토한 제안서
+
+아래는 컨셉을 고르기 전의 기록이다.
 
 ## 제안서 목록
 

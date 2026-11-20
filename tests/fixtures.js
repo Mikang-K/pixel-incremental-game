@@ -3,7 +3,7 @@
 
 function testConfig() {
   return {
-    cell: { workBase: 2, workGrowth: 1, dropsBase: 1, dropsGrowth: 1.35 },
+    cell: { workBase: 2, workGrowth: 1, tierWorkGrowth: 1, dropsBase: 1, dropsGrowth: 1.35 },
     click: { basePower: 1 },
     fairies: {
       brush: { baseCost: 15, costGrowth: 1.15, workPerSecond: 0.5, spread: 1 },

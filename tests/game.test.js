@@ -194,3 +194,11 @@ test('마지막 그림까지 끝내면 게임이 끝난 상태가 된다', () =>
   assert.equal(g.canPrestige(), false);
   assert.equal(g.state.gallery.length, 3);
 });
+test('해상도 단계가 오르면 칸의 필요 작업량에 단계 배율이 곱해진다', () => {
+  const config = testConfig();
+  config.cell.tierWorkGrowth = 3;
+  const g = Game.create(config, testPictures());
+  assert.equal(g.cellRequired(), 2);
+  finishTier(g); g.prestige();
+  assert.equal(g.cellRequired(), 6);
+});

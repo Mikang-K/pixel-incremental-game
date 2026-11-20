@@ -11,7 +11,7 @@ const TOTAL_MIN_MINUTES = 120;
 const MAX_IDLE_GAP_SECONDS = 180; // 구매도 그림 완성도 없이 기다리기만 하는 구간의 한도
 const GIVE_UP_SECONDS = 24 * 3600;
 
-const clicksPerSecond = Number(process.argv[2] || 3);
+function run(CONFIG, clicksPerSecond, giveUpSeconds = GIVE_UP_SECONDS) {
 const g = Game.create(CONFIG, PICTURES);
 const firstType = Object.keys(CONFIG.fairies)[0];
 
@@ -37,7 +37,7 @@ const eyeShop = Object.keys(CONFIG.eyeUpgrades).map((id) => ({
 
 let t = 0, lastEvent = 0, longestGap = 0, gapAt = 0, tierStart = 0;
 const tierSeconds = [];
-while (!g.state.finished && t < GIVE_UP_SECONDS) {
+while (!g.state.finished && t < giveUpSeconds) {
   for (let i = 0; i < clicksPerSecond; i++) {
     const pic = g.picture();
     const cell = pic && g.targets(firstType)[0];
@@ -62,7 +62,11 @@ while (!g.state.finished && t < GIVE_UP_SECONDS) {
   }
 }
 if (g.state.finished) tierSeconds.push(t - tierStart);
+return { finished: g.state.finished, t, tierSeconds, longestGap, gapAt };
+}
 
+function report(clicksPerSecond) {
+const { finished, t, tierSeconds, longestGap, gapAt } = run(CONFIG, clicksPerSecond);
 const problems = [];
 const minutes = (s) => (s / 60).toFixed(1);
 console.log(`초당 클릭 ${clicksPerSecond}회`);
@@ -74,7 +78,11 @@ tierSeconds.forEach((s, i) => {
 });
 console.log(`  합계: ${minutes(t)}분 (목표 ${TOTAL_MIN_MINUTES}분 이상)`);
 console.log(`  가장 긴 빈 구간: ${longestGap}초, ${minutes(gapAt)}분 무렵 (한도 ${MAX_IDLE_GAP_SECONDS}초)`);
-if (!g.state.finished) problems.push('24시간 안에 끝나지 않음');
+if (!finished) problems.push('24시간 안에 끝나지 않음');
 if (t / 60 < TOTAL_MIN_MINUTES) problems.push('합계');
 if (longestGap > MAX_IDLE_GAP_SECONDS) problems.push('빈 구간');
 if (problems.length) { console.log(`실패: ${problems.join(', ')}`); process.exitCode = 1; } else console.log('통과');
+}
+
+if (require.main === module) report(Number(process.argv[2] || 3));
+module.exports = { run, TIER_MINUTES, TOTAL_MIN_MINUTES, MAX_IDLE_GAP_SECONDS };

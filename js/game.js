@@ -22,7 +22,9 @@ const Game = (function () {
 
     const level = (id) => state.upgrades[id] || 0;
     const picture = () => (state.awaitingPrestige || state.finished ? null : pics[state.pictureIndex]);
-    const cellRequired = () => config.cell.workBase * config.cell.workGrowth ** state.pictureIndex;
+    const tiers = [...new Set(pics.map((p) => p.tier))];
+    const cellRequired = () => config.cell.workBase * config.cell.workGrowth ** state.pictureIndex
+      * config.cell.tierWorkGrowth ** tiers.indexOf(pics[state.pictureIndex].tier);
     const isCellDone = (i) => state.work[i] >= cellRequired() - EPS;
 
     function dropsMultiplier() {
@@ -122,7 +124,6 @@ const Game = (function () {
 
     function prestige() {
       if (!canPrestige()) return false;
-      const tiers = [...new Set(pics.map((p) => p.tier))];
       state.eyes += config.prestige.eyesBase * (tiers.indexOf(pics[state.pictureIndex].tier) + 1);
       state.drops = 0;
       state.upgrades = {};
