@@ -47,7 +47,80 @@ const Game = (function () {
 
     function completeCell(i) {
       const cell = config.cell;
-      state.drops += cell.dropsBase * cell.dropsGrowth ** state.pictureIndex * dropsMultiplier();
+      const pic = pics[state.pictureIndex];
+      const trait = (pic.traits || {})[parseInt(pic.rows[Math.floor(i / pic.tier)][i % pic.tier], 16)];
+      let drops = cell.dropsBase * cell.dropsGrowth ** state.pictureIndex * dropsMultiplier();
+      if (trait === 'yellow' && level('ruleYellow')) drops *= config.rules.yellow.dropsMultiplier;
+      state.drops += drops;
+      if (trait === 'red' && level('ruleRed')) state.heatUntil = state.time + config.rules.red.heatSeconds;
+      if (trait === 'blue' && level('ruleBlue')) {
+        const x = i % pic.tier, y = Math.floor(i / pic.tier);
+        const bleed = cellRequired() * config.rules.blue.bleedFraction;
+        if (y > 0) addWork(i - pic.tier, bleed);
+        if (y < pic.tier - 1) addWork(i + pic.tier, bleed);
+        if (x > 0) addWork(i - 1, bleed);
+        if (x < pic.tier - 1) addWork(i + 1, bleed);
+      }
+    }
+
+    const TYPES = Object.keys(config.fairies);
+
+    function spend(cost) {
+      if (state.drops < cost) return false;
+      state.drops -= cost;
+      return true;
+    }
+
+    const fairyCost = (type) => config.fairies[type].baseCost * config.fairies[type].costGrowth ** state.fairies[type];
+
+    function buyFairy(type) {
+      if (!config.fairies[type] || !spend(fairyCost(type))) return false;
+      state.fairies[type]++;
+      return true;
+    }
+
+    const upgradeCost = (id) => config.upgrades[id].baseCost * config.upgrades[id].costGrowth ** level(id);
+
+    function buyUpgrade(id) {
+      const upgrade = config.upgrades[id];
+      if (!upgrade || level(id) >= (upgrade.maxLevel || Infinity) || !spend(upgradeCost(id))) return false;
+      state.upgrades[id] = level(id) + 1;
+      return true;
+    }
+
+    function workPerSecond(type) {
+      if (!type) return TYPES.reduce((sum, t) => sum + workPerSecond(t), 0);
+      const heat = state.time < state.heatUntil ? config.rules.red.heatMultiplier : 1;
+      return state.fairies[type] * config.fairies[type].workPerSecond
+        * config.upgrades[type + 'Speed'].multiplier ** level(type + 'Speed') * heat;
+    }
+
+    // 그 요정 종류가 지금 칠하는 칸: 안 끝난 칸을 번호순으로 spread개.
+    function targets(type) {
+      const found = [];
+      const spread = config.fairies[type].spread;
+      for (let i = 0; i < state.work.length && found.length < spread; i++) if (!isCellDone(i)) found.push(i);
+      return found;
+    }
+
+    function tick(dt) {
+      if (!(dt > 0)) return;
+      while (dt > EPS) {
+        if (!picture()) { state.time += dt; return; }
+        const step = Math.min(dt, config.tick.maxStepSeconds);
+        dt -= step;
+        for (const type of TYPES) {
+          let pool = workPerSecond(type) * step;
+          while (pool > EPS && picture()) {
+            const cells = targets(type);
+            const share = pool / cells.length;
+            pool = 0;
+            // 도중에 그림이 바뀌거나 칸이 먼저 차면 addWork가 남은 양을 돌려준다
+            for (const i of cells) pool += picture() ? addWork(i, share) : share;
+          }
+        }
+        state.time += step;
+      }
     }
 
     // 칸에 작업량을 더하고 남은 양을 돌려준다.
@@ -74,7 +147,10 @@ const Game = (function () {
       return true;
     }
 
-    return { state, picture, cellRequired, isCellDone, click, progress, dropsMultiplier };
+    return {
+      state, picture, cellRequired, isCellDone, click, progress, dropsMultiplier,
+      fairyCost, buyFairy, upgradeCost, buyUpgrade, workPerSecond, targets, tick,
+    };
   }
 
   return { create, formatNumber };
