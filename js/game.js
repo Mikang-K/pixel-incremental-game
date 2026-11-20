@@ -174,13 +174,14 @@ const Game = (function () {
     }
 
     function paint(x, y) {
-      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= width || y >= height) return 0;
+      // 붓의 왼쪽 위 모서리는 그림 밖에 있어도 된다. 그림 안에 걸친 픽셀만 칠한다.
       const size = brushSize();
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x <= -size || y <= -size || x >= width || y >= height) return 0;
       let count = 0;
       for (let dy = 0; dy < size; dy++) {
         for (let dx = 0; dx < size; dx++) {
           const px = x + dx, py = y + dy;
-          if (px >= width || py >= height || budget < 1) continue;
+          if (px < 0 || py < 0 || px >= width || py >= height || budget < 1) continue;
           const i = py * width + px;
           if (painted[i]) continue;
           budget--;

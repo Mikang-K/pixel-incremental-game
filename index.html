@@ -21,7 +21,12 @@
       <canvas id="view" aria-label="복원 중인 그림. 왼쪽 버튼으로 누르거나 끌어서 칠하고, 휠로 확대하고, 오른쪽 버튼이나 스페이스를 누른 채 끌어서 옮깁니다."></canvas>
       <div id="toasts" aria-live="polite"></div>
       <p id="hint" class="label">왼쪽 버튼: 칠하기, 휠: 확대, 오른쪽 버튼 또는 스페이스+끌기: 옮기기</p>
-      <div id="finish" hidden>
+      <div id="stale" class="notice" hidden role="alert">
+        <h2>다른 탭에서 게임을 저장했습니다</h2>
+        <p>이 탭의 진행은 이제 저장되지 않습니다. 새로 고쳐서 최신 진행을 불러오세요.</p>
+        <button id="reloadStale" type="button" class="primary">새로 고침</button>
+      </div>
+      <div id="finish" class="notice" hidden>
         <h2>모든 픽셀을 되살렸습니다</h2>
         <p id="finishText"></p>
         <button id="closeFinish" type="button" class="primary">그림 감상하기</button>

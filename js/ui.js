@@ -38,7 +38,15 @@
   let g;
   let living = null;
   let finishedShown = false;
-  const save = () => { if (g) Save.store(storage, g, CONFIG); };
+  // 다른 탭이 같은 저장을 쓰면 이 탭은 낡은 상태다. 더 저장하면 그쪽의 최신 진행을 덮어쓴다.
+  let stale = false;
+  const save = () => { if (g && !stale) Save.store(storage, g, CONFIG); };
+  window.addEventListener('storage', (e) => {
+    if (e.key !== CONFIG.save.storageKey || stale) return;
+    stale = true;
+    $('stale').hidden = false;
+  });
+  $('reloadStale').addEventListener('click', () => location.reload());
 
   // ---------- 그림 픽셀 ----------
   const display = document.createElement('canvas');
@@ -163,7 +171,7 @@
     const pt = canvasPoint(e);
     if (e.button === 1 || e.button === 2 || (e.button === 0 && spaceDown)) {
       mode = 'pan'; last = pt; view.classList.add('panning');
-    } else if (e.button === 0 && !finishedShown) {
+    } else if (e.button === 0 && !finishedShown && !stale) {
       mode = 'paint'; last = toPixel(...pt); paintAt(...last);
     }
   });

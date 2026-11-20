@@ -66,12 +66,12 @@ main { display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
 .toast { background: rgba(15, 20, 36, 0.92); border: 2px solid var(--gold); padding: 6px 14px; box-shadow: 3px 3px 0 #000; animation: toast 3.5s forwards; }
 @keyframes toast { 0% { opacity: 0; transform: translateY(-6px); } 8% { opacity: 1; transform: none; } 85% { opacity: 1; } 100% { opacity: 0; } }
 
-#finish {
+.notice {
   position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%);
   background: rgba(15, 20, 36, 0.92); border: 3px solid var(--gold); padding: 18px 26px; text-align: center; box-shadow: 6px 6px 0 #000;
 }
-#finish[hidden] { display: none; }
-#finish p { margin: 10px 0 14px; line-height: 1.6; }
+.notice[hidden] { display: none; }
+.notice p { margin: 10px 0 14px; line-height: 1.6; }
 
 #panel { display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-left: 2px solid var(--line); }
 #minimap { display: block; margin: 12px auto; border: 2px solid var(--line); cursor: pointer; image-rendering: auto; }

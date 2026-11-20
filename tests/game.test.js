@@ -161,3 +161,12 @@ test('요정이 칠한 목록은 상한까지만 보관한다', () => {
   g.tick(1);
   assert.equal(g.drainFairyPainted().length, 3);
 });
+
+test('붓이 왼쪽과 위쪽 밖으로 걸쳐도 안쪽은 칠한다', () => {
+  const g = Game.create(testConfig(), testRegions());
+  g.state.points = 1e6; g.buy('brushSize'); g.buy('brushSize');   // 3x3
+  assert.equal(g.paint(-1, -1), 4);
+  g.tick(2);
+  assert.equal(g.paint(-1, 4), 6);                                 // x 0..1, y 4..6
+  assert.equal(g.paint(-3, 0), 0);                                 // 붓 전체가 밖
+});
