@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<title>영역 확인</title>
+<style>
+  body { background: #15141c; color: #e8e4d8; font-family: sans-serif; margin: 16px; }
+  #wrap { position: relative; display: inline-block; }
+  canvas { display: block; max-width: 100%; }
+  label { margin-right: 16px; }
+  table { border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+  td, th { padding: 2px 10px; border-bottom: 1px solid #333; text-align: right; }
+  td:first-child, th:first-child { text-align: left; }
+  .sw { display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: middle; }
+</style>
+<body>
+<p>
+  <label><input type="checkbox" id="overlay" checked> 영역 색 겹치기</label>
+  <label><input type="checkbox" id="grid" checked> 0.05 간격 눈금</label>
+  <span id="info"></span>
+</p>
+<div id="wrap"><canvas id="c"></canvas></div>
+<table id="table"></table>
+<script src="../js/config.js"></script>
+<script src="../js/regions.js"></script>
+<script src="../js/painting-image.js"></script>
+<script src="../js/game.js"></script>
+<script>
+  // 그림 위에 영역을 반투명 색으로 겹쳐 보여 준다. 눌러서 정규화 좌표를 읽는다.
+  const { width, height } = CONFIG.painting;
+  const c = document.getElementById('c');
+  c.width = width; c.height = height;
+  const ctx = c.getContext('2d');
+  const { index, sizes } = Game.rasterizeRegions(REGIONS, width, height);
+  const colors = REGIONS.map((r, i) => r.rest ? null : `hsl(${(i * 67) % 360} 90% 55%)`);
+  const img = new Image();
+  img.onload = draw;
+  img.src = PAINTING_IMAGE;
+
+  function draw() {
+    ctx.drawImage(img, 0, 0);
+    if (document.getElementById('overlay').checked) {
+      const over = ctx.createImageData(width, height);
+      const rgb = colors.map((col) => {
+        if (!col) return null;
+        const t = document.createElement('canvas').getContext('2d');
+        t.fillStyle = col; t.fillRect(0, 0, 1, 1);
+        return t.getImageData(0, 0, 1, 1).data;
+      });
+      for (let i = 0; i < index.length; i++) {
+        const col = rgb[index[i]];
+        if (!col) continue;
+        over.data.set([col[0], col[1], col[2], 110], i * 4);
+      }
+      const o = document.createElement('canvas'); o.width = width; o.height = height;
+      o.getContext('2d').putImageData(over, 0, 0);
+      ctx.drawImage(o, 0, 0);
+    }
+    if (document.getElementById('grid').checked) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif';
+      for (let k = 1; k < 20; k++) {
+        const x = Math.round(k * 0.05 * width) + 0.5, y = Math.round(k * 0.05 * height) + 0.5;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+        ctx.fillText((k * 0.05).toFixed(2), x + 2, 11);
+        ctx.fillText((k * 0.05).toFixed(2), 2, y - 2);
+      }
+    }
+  }
+  document.getElementById('overlay').onchange = draw;
+  document.getElementById('grid').onchange = draw;
+  c.addEventListener('click', (e) => {
+    const r = c.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+    const reg = REGIONS[index[Math.floor(y * height) * width + Math.floor(x * width)]];
+    document.getElementById('info').textContent = `x ${x.toFixed(3)}, y ${y.toFixed(3)}, 영역 ${reg.id}`;
+  });
+  const total = width * height;
+  document.getElementById('table').innerHTML = '<tr><th>영역</th><th>이름</th><th>효과</th><th>픽셀</th><th>비율</th></tr>'
+    + REGIONS.map((r, i) => `<tr><td><span class="sw" style="background:${colors[i] || 'transparent'}"></span>${r.id}</td><td>${r.name}</td><td>${r.effect}</td><td>${sizes[i].toLocaleString()}</td><td>${(sizes[i] / total * 100).toFixed(2)}%</td></tr>`).join('');
+</script>
+</body>
+</html>

@@ -1,48 +1,28 @@
-# 픽셀 아트 인크리멘탈 게임 기획
+# 별이 빛나는 밤
 
-상태: 제안 A "색을 잃은 캔버스"를 골라 첫 버전을 구현함. 색을 잃은 명화 22장을 픽셀 한 칸씩 되살리는 게임.
+색을 잃은 명화 한 장을 픽셀 하나씩, 직접 고른 자리에 찍어 되살리는 인크리멘탈 게임. 처음에는 손으로 하나씩 찍고, 점점 요정이 칠한 곳에서 번져 나가며 그림을 완성한다. 다 채운 부분은 별이 반짝이듯 움직이기 시작한다.
+
+상태: 구현 중. 설계는 [docs/superpowers/specs/2026-11-20-starry-night-design.md](docs/superpowers/specs/2026-11-20-starry-night-design.md), 계획은 [docs/superpowers/plans/2026-11-20-starry-night.md](docs/superpowers/plans/2026-11-20-starry-night.md).
 
 ## 실행
 
 - 게임: `index.html`을 브라우저로 연다. 설치할 것이 없다.
 - 검사: `node --test`
-- 속도 확인: `node tools/simulate.js [초당 클릭 수]`. 단계별 소요 시간을 출력한다. 균형 숫자는 `js/config.js`에만 있다.
-- 그림 확인: `tools/preview.html`을 브라우저로 연다.
+- 영역 확인: `tools/regions.html`을 브라우저로 연다(그림 위에 영역을 겹쳐 보여 준다).
 
-문서: [설계](docs/superpowers/specs/2026-11-20-lost-canvas-design.md), [구현 계획](docs/superpowers/plans/2026-11-20-lost-canvas.md)
+## 그림 다시 만들기
 
-## 처음에 검토한 제안서
+1. 원본을 `source/`에 받는다(저장소에는 넣지 않는다).
+2. `powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-painting.ps1 -Source source/starry-night-1920.jpg -Width 1280 -Height 1014`
+3. 폭과 높이는 `js/config.js`의 `painting`과 같게 준다. 해상도를 바꾸면 이전 저장은 쓸 수 없어 새 게임으로 시작한다.
 
-아래는 컨셉을 고르기 전의 기록이다.
+## 그림 출처
 
-## 제안서 목록
+- 작품: 빈센트 반 고흐, 「별이 빛나는 밤」(The Starry Night), 1889, 뉴욕 현대미술관 소장
+- 파일: 위키미디어 공용 `Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg`의 가로 1920픽셀 판
+  https://commons.wikimedia.org/wiki/File:Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg
+- 저작권: 퍼블릭 도메인(작가 사후 70년이 지남)
 
-| 번호 | 제목 | 한 줄 소개 | 플레이 성격 | 아트 분량 | 제작 난이도 |
-|---|---|---|---|---|---|
-| A | [색을 잃은 캔버스](proposals/A-lost-canvas.md) | 픽셀을 한 칸씩 되살려 거대한 그림을 복원 | 방치 중심, 가끔 클릭 | 적음 (그림 자체가 콘텐츠) | 낮음 |
-| B | [바닥 없는 갱도](proposals/B-endless-shaft.md) | 단면도로 보이는 땅을 끝없이 파 내려감 | 능동과 방치 반반 | 중간 (지층, 광부, 기계) | 중간 |
-| C | [병 속의 세계](proposals/C-jar-world.md) | 유리병 안 작은 생태계를 키우고 진화시킴 | 거의 완전 방치, 관찰형 | 많음 (생물 애니메이션) | 중간에서 높음 |
-| D | [새벽 골목 포장마차](proposals/D-night-stall.md) | 포장마차 한 칸에서 골목 전체로 장사를 키움 | 능동 중심, 짧은 세션 | 많음 (손님, 음식, 가게) | 높음 |
+## 이전 기록
 
-## 고르는 기준
-
-- 혼자 만들고 아트 부담을 줄이고 싶다: A
-- 인크리멘탈 장르의 검증된 재미를 원한다: B
-- 틀어 두고 보는 분위기 게임을 원한다: C
-- 캐릭터와 이야기가 있는 게임을 원한다: D
-
-## 내 추천
-
-A. 이유는 세 가지.
-
-1. 진행도가 곧 픽셀 아트라서 "픽셀 아트 기반"이라는 조건이 장식이 아니라 규칙이 된다.
-2. 해상도 올리기(8x8, 16x16, 32x32)가 프레스티지와 자연스럽게 맞물린다.
-3. 필요한 아트가 완성 그림 몇 장뿐이라 첫 버전을 가장 빨리 만들 수 있다.
-
-## 컨셉을 고른 뒤 정할 것
-
-- 플랫폼 (웹, 스팀, 모바일)
-- 한 번 플레이 길이와 전체 분량 (며칠짜리인지, 몇 달짜리인지)
-- 수익 모델 (무료, 유료, 없음)
-- 제작 인원과 도구
-- 숫자 설계 (비용 곡선, 프레스티지 배율). 이 값들은 코드에 고정하지 않고 설정 파일로 뺀다.
+처음 검토한 컨셉 제안서는 [proposals/](proposals/)에, 명화 22장 버전의 설계와 계획은 `docs/superpowers/`의 `lost-canvas` 문서에 남아 있다.
