@@ -136,3 +136,61 @@ test('규칙을 열지 않았으면 색 효과가 없다', () => {
   g.click(1, 0); g.click(1, 0);
   assert.equal(g.state.work[0], 0);
 });
+
+// 프레스티지, 눈 강화, 결말
+function finishTier(g) { g.state.fairies.spray = 1000; g.tick(100000); }
+test('단계를 끝내기 전에는 프레스티지할 수 없다', () => {
+  const g = Game.create(testConfig(), testPictures());
+  assert.equal(g.canPrestige(), false);
+  assert.equal(g.prestige(), false);
+});
+test('프레스티지는 방울과 요정과 강화를 지우고 갤러리와 눈을 남긴다', () => {
+  const g = Game.create(testConfig(), testPictures());
+  finishTier(g); g.state.upgrades.clickPower = 3;
+  assert.equal(g.prestige(), true);
+  assert.equal(g.state.drops, 0);
+  assert.deepEqual(g.state.fairies, { brush: 0, roller: 0, spray: 0 });
+  assert.deepEqual(g.state.upgrades, {});
+  assert.equal(g.state.gallery.length, 2);
+  assert.equal(g.state.eyes, 3);
+  assert.equal(g.picture().tier, 4);
+  assert.equal(g.state.work.length, 16);
+});
+test('시작 요정 강화는 프레스티지 뒤 붓 요정을 준다', () => {
+  const g = Game.create(testConfig(), testPictures());
+  g.state.eyes = 1; assert.equal(g.buyEyeUpgrade('startFairies'), true);
+  assert.equal(g.state.eyes, 0);
+  finishTier(g); g.prestige();
+  assert.equal(g.state.fairies.brush, 5);
+});
+test('눈이 모자라면 눈 강화를 살 수 없다', () => {
+  const g = Game.create(testConfig(), testPictures());
+  assert.equal(g.buyEyeUpgrade('globalSpeed'), false);
+  assert.deepEqual(g.state.eyeUpgrades, {});
+});
+test('전체 속도 강화는 작업량을 곱한다', () => {
+  const g = Game.create(testConfig(), testPictures());
+  g.state.eyes = 2; g.buyEyeUpgrade('globalSpeed'); g.state.fairies.brush = 2;
+  assert.equal(g.workPerSecond(), 2);
+});
+test('오프라인 효율 강화는 효율을 더하되 1을 넘지 않는다', () => {
+  const g = Game.create(testConfig(), testPictures());
+  assert.equal(g.offlineEfficiency(), 0.5);
+  g.state.eyeUpgrades.offlineEfficiency = 2;
+  assert.equal(g.offlineEfficiency(), 0.7);
+  g.state.eyeUpgrades.offlineEfficiency = 50;
+  assert.equal(g.offlineEfficiency(), 1);
+});
+test('자동 구매는 가장 싼 요정을 산다', () => {
+  const g = Game.create(testConfig(), testPictures());
+  g.state.eyeUpgrades.autoBuy = 1; g.state.drops = 15;
+  g.tick(1);
+  assert.equal(g.state.fairies.brush, 1);
+});
+test('마지막 그림까지 끝내면 게임이 끝난 상태가 된다', () => {
+  const g = Game.create(testConfig(), testPictures());
+  finishTier(g); g.prestige(); finishTier(g);
+  assert.equal(g.state.finished, true);
+  assert.equal(g.canPrestige(), false);
+  assert.equal(g.state.gallery.length, 3);
+});

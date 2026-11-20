@@ -92,7 +92,47 @@ const Game = (function () {
       if (!type) return TYPES.reduce((sum, t) => sum + workPerSecond(t), 0);
       const heat = state.time < state.heatUntil ? config.rules.red.heatMultiplier : 1;
       return state.fairies[type] * config.fairies[type].workPerSecond
-        * config.upgrades[type + 'Speed'].multiplier ** level(type + 'Speed') * heat;
+        * config.upgrades[type + 'Speed'].multiplier ** level(type + 'Speed') * heat
+        * config.eyeUpgrades.globalSpeed.multiplier ** eyeLevel('globalSpeed');
+    }
+
+    const eyeLevel = (id) => state.eyeUpgrades[id] || 0;
+    const eyeUpgradeCost = (id) => config.eyeUpgrades[id].baseCost * config.eyeUpgrades[id].costGrowth ** eyeLevel(id);
+
+    function buyEyeUpgrade(id) {
+      const upgrade = config.eyeUpgrades[id];
+      if (!upgrade || eyeLevel(id) >= (upgrade.maxLevel || Infinity)) return false;
+      const cost = eyeUpgradeCost(id);
+      if (state.eyes < cost) return false;
+      state.eyes -= cost;
+      state.eyeUpgrades[id] = eyeLevel(id) + 1;
+      return true;
+    }
+
+    const offlineEfficiency = () => Math.min(1,
+      config.offline.baseEfficiency + config.eyeUpgrades.offlineEfficiency.addPerLevel * eyeLevel('offlineEfficiency'));
+
+    const canPrestige = () => state.awaitingPrestige && !state.finished;
+
+    function prestige() {
+      if (!canPrestige()) return false;
+      const tiers = [...new Set(pics.map((p) => p.tier))];
+      state.eyes += config.prestige.eyesBase * (tiers.indexOf(pics[state.pictureIndex].tier) + 1);
+      state.drops = 0;
+      state.upgrades = {};
+      state.heatUntil = 0;
+      for (const type of TYPES) state.fairies[type] = 0;
+      state.fairies.brush = config.eyeUpgrades.startFairies.brushPerLevel * eyeLevel('startFairies');
+      state.pictureIndex++;
+      state.work = zeros(pics[state.pictureIndex]);
+      state.awaitingPrestige = false;
+      return true;
+    }
+
+    function autoBuy() {
+      if (!eyeLevel('autoBuy')) return;
+      const cheapest = TYPES.reduce((a, b) => (fairyCost(a) <= fairyCost(b) ? a : b));
+      buyFairy(cheapest);
     }
 
     // 그 요정 종류가 지금 칠하는 칸: 안 끝난 칸을 번호순으로 spread개.
@@ -109,6 +149,7 @@ const Game = (function () {
         if (!picture()) { state.time += dt; return; }
         const step = Math.min(dt, config.tick.maxStepSeconds);
         dt -= step;
+        autoBuy();
         for (const type of TYPES) {
           let pool = workPerSecond(type) * step;
           while (pool > EPS && picture()) {
@@ -150,6 +191,7 @@ const Game = (function () {
     return {
       state, picture, cellRequired, isCellDone, click, progress, dropsMultiplier,
       fairyCost, buyFairy, upgradeCost, buyUpgrade, workPerSecond, targets, tick,
+      eyeUpgradeCost, buyEyeUpgrade, offlineEfficiency, canPrestige, prestige,
     };
   }
 
