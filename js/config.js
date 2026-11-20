@@ -1,42 +1,22 @@
 'use strict';
-// 모든 균형 숫자는 여기에만 둔다. tools/simulate.js로 결과를 보며 조정한다.
+// 모든 균형 숫자와 해상도는 여기에만 둔다. tools/simulate.js로 결과를 보며 조정한다.
 const CONFIG = {
-  // 칸의 필요 작업량과 방울. 지수는 그림 순번(0부터). tierWorkGrowth는 해상도 단계(0부터)마다 한 번 더 곱한다.
-  cell: { workBase: 18, workGrowth: 1.25, tierWorkGrowth: 1.8, dropsBase: 1, dropsGrowth: 1.2 },
-  click: { basePower: 1 },
-  fairies: {
-    brush: { baseCost: 8, costGrowth: 1.15, workPerSecond: 0.5, spread: 1 },
-    roller: { baseCost: 400, costGrowth: 1.15, workPerSecond: 6, spread: 3 },
-    spray: { baseCost: 9000, costGrowth: 1.15, workPerSecond: 60, spread: 9 },
-  },
+  // 원작 비율 약 5:4. 바꾸면 tools/build-painting.ps1로 그림을 다시 만든다.
+  painting: { width: 1280, height: 1014 },
+  hand: { baseRate: 3, burstSeconds: 2 }, // 손으로 찍는 초당 한도, 쌓아 둘 수 있는 초
+  points: { perPixel: 1 },
+  fairies: { unlockAtPainted: 15000, baseRate: 2 }, // 열리는 칠한 픽셀 수, 한 마리의 초당 픽셀
   upgrades: {
-    // 클릭 힘은 값이 가파르게 오른다. 초반에는 손으로, 이후에는 요정이 주력이 되게 하려는 것.
-    clickPower: { baseCost: 4, costGrowth: 6, multiplier: 2 },
-    brushSpeed: { baseCost: 100, costGrowth: 3, multiplier: 2 },
-    rollerSpeed: { baseCost: 2500, costGrowth: 3, multiplier: 2 },
-    spraySpeed: { baseCost: 50000, costGrowth: 3, multiplier: 2 },
-    cellDrops: { baseCost: 200, costGrowth: 2.5, multiplier: 1.5 },
-    ruleBlue: { baseCost: 300, costGrowth: 1, maxLevel: 1 },
-    ruleYellow: { baseCost: 1500, costGrowth: 1, maxLevel: 1 },
-    ruleRed: { baseCost: 6000, costGrowth: 1, maxLevel: 1 },
+    handSpeed: { baseCost: 10, costGrowth: 1.6, add: 1 },
+    pointsPerPixel: { baseCost: 50, costGrowth: 1.9, multiplier: 1.5 },
+    brushSize: { baseCost: 2000, costGrowth: 40, maxLevel: 2 }, // 1, 2x2, 3x3
+    fairyHire: { baseCost: 300, costGrowth: 1.18 },
+    fairySpeed: { baseCost: 1500, costGrowth: 2.2, multiplier: 1.4 },
   },
-  rules: {
-    blue: { bleedFraction: 0.25 },
-    yellow: { dropsMultiplier: 5 },
-    red: { heatSeconds: 5, heatMultiplier: 2 },
-  },
-  gallery: { bonusPerPicture: 0.1 },
-  prestige: { eyesBase: 3 },
-  eyeUpgrades: {
-    startFairies: { baseCost: 1, costGrowth: 2, brushPerLevel: 5 },
-    offlineEfficiency: { baseCost: 2, costGrowth: 2, addPerLevel: 0.1 },
-    globalSpeed: { baseCost: 1, costGrowth: 2, multiplier: 2 },
-    autoBuy: { baseCost: 3, costGrowth: 1, maxLevel: 1 },
-  },
-  offline: { maxSeconds: 28800, baseEfficiency: 0.5 },
-  save: { intervalSeconds: 10, storageKey: 'lostCanvasSave' },
-  tick: { maxStepSeconds: 1 },
-  ui: { maxFairyDots: 20 },
+  regions: { firstTouchBonus: 25, completeBonusPerPixel: 0.2 },
+  frame: { maxGapSeconds: 5 }, // 이보다 긴 프레임 간격(절전 등)은 진행에 넣지 않는다
+  save: { intervalSeconds: 10, storageKey: 'starryNightSave' },
+  ui: { maxPixelSize: 24, maxFairyDots: 40 },
 };
 
 if (typeof module !== 'undefined') module.exports = CONFIG;
