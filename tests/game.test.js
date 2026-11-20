@@ -95,3 +95,69 @@ test('칠한 픽셀 목록은 꺼낼 때마다 비워진다', () => {
   assert.deepEqual(g.drainPainted(), [13]);
   assert.deepEqual(g.drainPainted(), []);
 });
+
+// 요정
+const paintRange = (g, from, to) => { for (let i = from; i < to; i++) { g.tick(1); g.paint(i % 10, Math.floor(i / 10)); } };
+const withFairies = (seed, fairies) => {
+  const config = { ...testConfig(), seed };
+  config.fairies = { ...config.fairies, ...fairies };
+  return config;
+};
+test('정해진 수만큼 칠하기 전에는 요정이 잠겨 있고 넘으면 열린다', () => {
+  const g = Game.create(testConfig(), testRegions());
+  paintRange(g, 0, 4);
+  assert.equal(g.fairiesUnlocked(), false);
+  paintRange(g, 4, 5);
+  assert.equal(g.fairiesUnlocked(), true);
+  assert.equal(g.isLocked('fairyHire'), false);
+  assert.ok(g.drainEvents().some((e) => e.type === 'fairiesUnlocked'));
+});
+test('요정은 칠한 곳과 맞닿은 자리부터 칠한다', () => {
+  const g = Game.create(withFairies(1, { unlockAtPainted: 1 }), testRegions());
+  g.paint(5, 4); g.drainPainted();
+  g.state.points = 1e6; g.buy('fairyHire');
+  assert.equal(g.fairyCount(), 1);
+  assert.equal(g.fairyRate(), 2);
+  g.tick(1);
+  const got = g.drainPainted();
+  assert.equal(got.length, 2);
+  for (const i of got) {
+    const x = i % 10, y = Math.floor(i / 10);
+    assert.ok(Math.abs(x - 5) + Math.abs(y - 4) <= 2, `멀리 떨어진 픽셀 ${i}`);
+  }
+  assert.deepEqual(g.drainFairyPainted(), got);
+});
+test('요정의 소수 작업량은 다음 tick으로 넘어간다', () => {
+  const g = Game.create(withFairies(1, { unlockAtPainted: 1 }), testRegions());
+  g.paint(0, 0); g.state.points = 1e6; g.buy('fairyHire'); g.drainPainted();
+  g.tick(0.25); assert.equal(g.drainPainted().length, 0);
+  g.tick(0.25); assert.equal(g.drainPainted().length, 1);
+});
+test('요정은 남은 픽셀을 모두 채우고 멈춘다', () => {
+  const g = Game.create(withFairies(3, { unlockAtPainted: 1, baseRate: 1000 }), testRegions());
+  g.paint(0, 0); g.state.points = 1e6; g.buy('fairyHire');
+  g.tick(1);
+  assert.equal(g.state.paintedCount, 80);
+  g.tick(1);
+  assert.ok(g.drainEvents().some((e) => e.type === 'finished'));
+});
+test('칠한 곳이 없어도 요정은 빈 자리를 찾아 칠한다', () => {
+  const g = Game.create(withFairies(2, { unlockAtPainted: 0 }), testRegions());
+  assert.equal(g.fairiesUnlocked(), true);
+  g.state.points = 1e6; g.buy('fairyHire');
+  g.tick(1);
+  assert.equal(g.state.paintedCount, 2);
+});
+test('요정 속도 강화는 요정 작업량을 곱한다', () => {
+  const g = Game.create(withFairies(1, { unlockAtPainted: 0 }), testRegions());
+  g.state.points = 1e6; g.buy('fairyHire'); g.buy('fairySpeed');
+  assert.ok(Math.abs(g.fairyRate() - 2.8) < 1e-9);
+});
+test('요정이 칠한 목록은 상한까지만 보관한다', () => {
+  const config = withFairies(4, { unlockAtPainted: 0, baseRate: 1000 });
+  config.ui = { ...config.ui, maxFairyDots: 3 };
+  const g = Game.create(config, testRegions());
+  g.state.points = 1e6; g.buy('fairyHire');
+  g.tick(1);
+  assert.equal(g.drainFairyPainted().length, 3);
+});
