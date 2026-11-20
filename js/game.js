@@ -36,6 +36,12 @@ const Game = (function () {
       return { done, total: state.work.length };
     }
 
+    // 지금까지 칠한 칸의 누계(완성한 그림 포함).
+    function paintedCells() {
+      const sizes = new Map(pics.map((p) => [p.id, p.tier * p.tier]));
+      return state.gallery.reduce((sum, id) => sum + sizes.get(id), 0) + progress().done;
+    }
+
     function finishPicture() {
       const pic = pics[state.pictureIndex];
       state.gallery.push(pic.id);
@@ -191,7 +197,7 @@ const Game = (function () {
     return {
       state, picture, cellRequired, isCellDone, click, progress, dropsMultiplier,
       fairyCost, buyFairy, upgradeCost, buyUpgrade, workPerSecond, targets, tick,
-      eyeUpgradeCost, buyEyeUpgrade, offlineEfficiency, canPrestige, prestige,
+      eyeUpgradeCost, buyEyeUpgrade, offlineEfficiency, canPrestige, prestige, paintedCells,
     };
   }
 
