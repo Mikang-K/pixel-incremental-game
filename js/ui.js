@@ -1,34 +1,33 @@
 'use strict';
-// 화면: 그리기, 입력, 게임 루프, 자동 저장. 규칙은 전부 Game에 있고 여기서는 읽고 전달만 한다.
+// 화면: 그리기, 확대 이동, 입력, 연출, 패널, 저장. 규칙은 전부 Game에 있고 여기서는 읽고 전달만 한다.
 (function () {
   const $ = (id) => document.getElementById(id);
-  const PICS = PICTURES.slice().sort((a, b) => a.tier - b.tier); // Game과 같은 순서
-  const BY_ID = new Map(PICS.map((p) => [p.id, p]));
-  const TYPES = Object.keys(CONFIG.fairies);
+  const W = CONFIG.painting.width, H = CONFIG.painting.height;
 
   const NAMES = {
-    brush: '붓 요정', roller: '롤러 요정', spray: '분무 요정',
-    clickPower: '클릭 힘', brushSpeed: '붓 요정 속도', rollerSpeed: '롤러 요정 속도', spraySpeed: '분무 요정 속도',
-    cellDrops: '칸당 방울', ruleBlue: '번짐(파랑)', ruleYellow: '금빛(노랑)', ruleRed: '열기(빨강)',
-    startFairies: '시작 요정', offlineEfficiency: '오프라인 효율', globalSpeed: '전체 속도', autoBuy: '자동 구매',
+    handSpeed: '손 빠르기', pointsPerPixel: '픽셀당 포인트', brushSize: '붓 크기',
+    fairyHire: '요정 고용', fairySpeed: '요정 속도',
   };
   const DESCRIPTIONS = {
-    brush: '한 칸씩 꾸준히 칠합니다.', roller: '세 칸에 나눠 칠합니다.', spray: '아홉 칸에 한꺼번에 뿌립니다.',
-    clickPower: '한 번 누를 때 칠하는 양이 늘어납니다.', brushSpeed: '붓 요정이 빨라집니다.',
-    rollerSpeed: '롤러 요정이 빨라집니다.', spraySpeed: '분무 요정이 빨라집니다.',
-    cellDrops: '칸을 완성할 때 방울을 더 받습니다.',
-    ruleBlue: '파란 칸을 완성하면 옆 칸으로 색이 번집니다.',
-    ruleYellow: '노란 칸을 완성하면 방울을 훨씬 많이 받습니다.',
-    ruleRed: '붉은 칸을 완성하면 잠깐 모든 요정이 빨라집니다.',
-    startFairies: '눈을 뜬 직후 붓 요정을 데리고 시작합니다.',
-    offlineEfficiency: '게임을 닫아 둔 동안 요정이 더 열심히 일합니다.',
-    globalSpeed: '모든 요정이 영원히 빨라집니다.',
-    autoBuy: '방울이 모이면 가장 싼 요정을 알아서 고용합니다.',
+    handSpeed: '손으로 1초에 칠할 수 있는 픽셀이 늘어납니다.',
+    pointsPerPixel: '픽셀을 칠할 때 받는 포인트가 늘어납니다.',
+    brushSize: '한 번에 칠하는 붓이 조금 커집니다. 최대 3x3.',
+    fairyHire: '요정이 칠한 곳의 가장자리에서 알아서 색을 번져 갑니다.',
+    fairySpeed: '모든 요정이 더 빨리 칠합니다.',
   };
-  const DOT_COLORS = { brush: '#fff3b0', roller: '#9be7ff', spray: '#ffb3de' };
 
-  const fmt = Game.formatNumber;
-  const fmtRate = (n) => (n < 100 ? n.toFixed(1) : fmt(n));
+  const UNITS = [[1e12, '조'], [1e8, '억'], [1e4, '만'], [1e3, '천']];
+  function fmt(n) {
+    if (!Number.isFinite(n)) return '무한';
+    if (n >= 1e16) return n.toExponential(1); // 조 단위를 넘으면 지수로 짧게
+    for (const [value, unit] of UNITS) if (n >= value) return (n / value).toFixed(1) + unit;
+    return String(Math.floor(n));
+  }
+  const fmtRate = (n) => (n < 100 ? String(Math.round(n * 10) / 10) : fmt(n));
+  function fmtTime(seconds) {
+    const h = Math.floor(seconds / 3600), m = Math.floor((seconds % 3600) / 60);
+    return h ? `${h}시간 ${m}분` : `${m}분`;
+  }
 
   // 저장소 접근이 막힌 브라우저에서도 게임은 돌아야 한다.
   let storage;
@@ -37,303 +36,423 @@
   }
 
   let g;
-  let tab = 'fairies';
-  let rows = [];
-  let galleryShown = -1;
-  const start = (saved) => { g = Game.create(CONFIG, PICTURES, saved || undefined); galleryShown = -1; buildList(); };
-  const save = () => Save.store(storage, g.state, Date.now(), CONFIG);
+  let living = null;
+  let finishedShown = false;
+  const save = () => { if (g) Save.store(storage, g, CONFIG); };
 
-  // ---------- 그림 그리기 ----------
-  const grays = new Map();
-  function gray(hex) {
-    if (!grays.has(hex)) {
-      const n = parseInt(hex.slice(1), 16);
-      // 밝기 차이를 눌러 바랜 느낌을 낸다. 흑백 그림도 칠한 칸과 구별된다.
-      const l = Math.round(70 + 0.3 * (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)));
-      grays.set(hex, `rgb(${l},${l},${l})`);
+  // ---------- 그림 픽셀 ----------
+  const display = document.createElement('canvas');
+  display.width = W; display.height = H;
+  const dctx = display.getContext('2d');
+  let colorData, grayData, displayData;
+
+  function prepareImages(img) {
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const cctx = c.getContext('2d');
+    cctx.drawImage(img, 0, 0, W, H);
+    colorData = cctx.getImageData(0, 0, W, H).data;
+    grayData = new Uint8ClampedArray(colorData.length);
+    for (let p = 0; p < colorData.length; p += 4) {
+      // 밝기 차이를 눌러 바랜 느낌을 낸다. 칠한 곳과 한눈에 구별된다.
+      const l = 70 + 0.3 * (0.299 * colorData[p] + 0.587 * colorData[p + 1] + 0.114 * colorData[p + 2]);
+      grayData[p] = grayData[p + 1] = grayData[p + 2] = l;
+      grayData[p + 3] = 255;
     }
-    return grays.get(hex);
+    displayData = dctx.createImageData(W, H);
   }
 
-  // fraction(i)가 없으면 완성본. 진행 중인 칸은 아래에서부터 색이 차오른다.
-  function paintPicture(ctx, pic, ox, oy, cell, fraction) {
-    for (let y = 0; y < pic.tier; y++) {
-      for (let x = 0; x < pic.tier; x++) {
-        const color = pic.palette[parseInt(pic.rows[y][x], 16)];
-        const f = fraction ? fraction(y * pic.tier + x) : 1;
-        ctx.fillStyle = f >= 1 ? color : gray(color);
-        ctx.fillRect(ox + x * cell, oy + y * cell, cell, cell);
-        if (f > 0 && f < 1) {
-          const h = Math.ceil(cell * f);
-          ctx.fillStyle = color;
-          ctx.fillRect(ox + x * cell, oy + (y + 1) * cell - h, cell, h);
-        }
+  function rebuildDisplay() {
+    const d = displayData.data;
+    for (let i = 0, p = 0; i < W * H; i++, p += 4) {
+      const src = g.painted[i] ? colorData : grayData;
+      d[p] = src[p]; d[p + 1] = src[p + 1]; d[p + 2] = src[p + 2]; d[p + 3] = 255;
+    }
+    dctx.putImageData(displayData, 0, 0);
+  }
+
+  // 새로 칠한 픽셀만 색으로 바꾸고, 바뀐 범위의 사각형만 캔버스에 올린다.
+  function applyPainted(list) {
+    if (!list.length) return;
+    const d = displayData.data;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (const i of list) {
+      const p = i * 4;
+      d[p] = colorData[p]; d[p + 1] = colorData[p + 1]; d[p + 2] = colorData[p + 2];
+      const x = i % W, y = (i - x) / W;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+    dctx.putImageData(displayData, 0, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+  }
+
+  // ---------- 보기 (확대와 이동) ----------
+  const view = $('view');
+  const vctx = view.getContext('2d');
+  const cam = { scale: 1, ox: 0, oy: 0 };
+  const fitScale = () => Math.min(view.width / W, view.height / H);
+
+  // 확대 범위를 지키고, 그림이 화면 밖으로 다 나가지 않게 붙잡는다.
+  function clampCam() {
+    cam.scale = Math.min(CONFIG.ui.maxPixelSize, Math.max(fitScale(), cam.scale));
+    const w = W * cam.scale, h = H * cam.scale;
+    cam.ox = w <= view.width ? (view.width - w) / 2 : Math.min(0, Math.max(view.width - w, cam.ox));
+    cam.oy = h <= view.height ? (view.height - h) / 2 : Math.min(0, Math.max(view.height - h, cam.oy));
+  }
+  function resize() {
+    const r = view.getBoundingClientRect();
+    view.width = Math.max(1, Math.round(r.width));
+    view.height = Math.max(1, Math.round(r.height));
+    clampCam();
+  }
+  function fit() {
+    cam.scale = fitScale();
+    clampCam();
+  }
+  function zoomAt(sx, sy, factor) {
+    const px = (sx - cam.ox) / cam.scale, py = (sy - cam.oy) / cam.scale;
+    cam.scale = Math.min(CONFIG.ui.maxPixelSize, Math.max(fitScale(), cam.scale * factor));
+    cam.ox = sx - px * cam.scale;
+    cam.oy = sy - py * cam.scale;
+    clampCam();
+  }
+  function centerOn(px, py) {
+    cam.ox = view.width / 2 - px * cam.scale;
+    cam.oy = view.height / 2 - py * cam.scale;
+    clampCam();
+  }
+  const toPixel = (sx, sy) => [Math.floor((sx - cam.ox) / cam.scale), Math.floor((sy - cam.oy) / cam.scale)];
+
+  // ---------- 연출 상태 ----------
+  const sparkles = [];
+  const dots = [];
+  const fairyTargets = [];
+
+  // ---------- 입력 ----------
+  let mode = null; // 'paint' | 'pan'
+  let last = null;
+  let spaceDown = false;
+  let hover = null;
+
+  function canvasPoint(e) {
+    const r = view.getBoundingClientRect();
+    return [(e.clientX - r.left) * (view.width / r.width), (e.clientY - r.top) * (view.height / r.height)];
+  }
+  function paintAt(x, y) {
+    const off = Math.floor((g.brushSize() - 1) / 2); // 붓 가운데가 커서에 오도록
+    if (g.paint(x - off, y - off)) sparkles.push({ x, y, t: performance.now(), size: g.brushSize() });
+  }
+  // 빠르게 끌어도 빈칸이 생기지 않게 지난 위치와 지금 위치를 선으로 잇는다.
+  function paintLine([x0, y0], [x1, y1]) {
+    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    let err = dx + dy, x = x0, y = y0;
+    for (let guard = 0; guard < 10000; guard++) {
+      paintAt(x, y);
+      if (x === x1 && y === y1) break;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x += sx; }
+      if (e2 <= dx) { err += dx; y += sy; }
+    }
+  }
+
+  view.addEventListener('contextmenu', (e) => e.preventDefault());
+  view.addEventListener('pointerdown', (e) => {
+    view.setPointerCapture(e.pointerId);
+    const pt = canvasPoint(e);
+    if (e.button === 1 || e.button === 2 || (e.button === 0 && spaceDown)) {
+      mode = 'pan'; last = pt; view.classList.add('panning');
+    } else if (e.button === 0 && !finishedShown) {
+      mode = 'paint'; last = toPixel(...pt); paintAt(...last);
+    }
+  });
+  view.addEventListener('pointermove', (e) => {
+    const pt = canvasPoint(e);
+    hover = toPixel(...pt);
+    if (mode === 'pan') {
+      cam.ox += pt[0] - last[0]; cam.oy += pt[1] - last[1]; last = pt; clampCam();
+    } else if (mode === 'paint') {
+      const cur = toPixel(...pt);
+      paintLine(last, cur);
+      last = cur;
+    }
+  });
+  const endDrag = () => { mode = null; last = null; view.classList.remove('panning'); };
+  view.addEventListener('pointerup', endDrag);
+  view.addEventListener('pointercancel', endDrag);
+  view.addEventListener('pointerleave', () => { hover = null; });
+  view.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomAt(...canvasPoint(e), Math.pow(1.0015, -e.deltaY));
+  }, { passive: false });
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && e.target === document.body) { spaceDown = true; e.preventDefault(); }
+  });
+  window.addEventListener('keyup', (e) => { if (e.code === 'Space') spaceDown = false; });
+
+  // ---------- 작은 전체 지도 ----------
+  const minimap = $('minimap');
+  const mctx = minimap.getContext('2d');
+  minimap.width = 300; minimap.height = Math.round(300 * H / W);
+  let minimapAt = -1e9;
+  function drawMinimap(now) {
+    if (now - minimapAt < 200) return;
+    minimapAt = now;
+    const k = minimap.width / W;
+    mctx.drawImage(display, 0, 0, minimap.width, minimap.height);
+    const x = Math.max(0, -cam.ox / cam.scale * k), y = Math.max(0, -cam.oy / cam.scale * k);
+    const w = Math.min(minimap.width - x, view.width / cam.scale * k), h = Math.min(minimap.height - y, view.height / cam.scale * k);
+    mctx.strokeStyle = '#f2c94c';
+    mctx.lineWidth = 2;
+    mctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  }
+  minimap.addEventListener('click', (e) => {
+    const r = minimap.getBoundingClientRect();
+    centerOn((e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H);
+    minimapAt = -1e9;
+  });
+
+  // ---------- 그리기 ----------
+  function drawEffects(now) {
+    const s = cam.scale;
+    // 칠한 자리에 남는 짧은 반짝임
+    if (sparkles.length > 300) sparkles.splice(0, sparkles.length - 300);
+    for (let k = sparkles.length - 1; k >= 0; k--) {
+      const p = sparkles[k], age = (now - p.t) / 450;
+      if (age >= 1) { sparkles.splice(k, 1); continue; }
+      const size = Math.max(3, s * p.size) * (1 + age * 1.5);
+      vctx.globalAlpha = 1 - age;
+      vctx.fillStyle = '#fff6c8';
+      vctx.fillRect(cam.ox + (p.x + 0.5) * s - size / 2, cam.oy + (p.y + 0.5) * s - size / 2, size, size);
+    }
+    vctx.globalAlpha = 1;
+
+    // 요정 빛 점: 요정이 최근 칠한 자리로 날아간다
+    const want = Math.min(CONFIG.ui.maxFairyDots, g.fairyCount());
+    while (dots.length < want) dots.push({ x: W / 2, y: H / 2, tx: W / 2, ty: H / 2 });
+    dots.length = want;
+    for (const d of dots) {
+      if (Math.hypot(d.tx - d.x, d.ty - d.y) < 1 && fairyTargets.length) {
+        const i = fairyTargets.shift();
+        d.tx = i % W; d.ty = Math.floor(i / W);
       }
+      d.x += (d.tx - d.x) * 0.15; d.y += (d.ty - d.y) * 0.15;
+      const sx = cam.ox + (d.x + 0.5) * s, sy = cam.oy + (d.y + 0.5) * s;
+      vctx.fillStyle = 'rgba(255, 240, 170, 0.35)';
+      vctx.fillRect(sx - 4, sy - 4, 8, 8);
+      vctx.fillStyle = '#fffbe6';
+      vctx.fillRect(sx - 2, sy - 2, 4, 4);
+    }
+
+    // 확대했을 때 붓이 칠할 자리를 보여 준다
+    if (hover && s >= 4 && !mode && !finishedShown) {
+      const size = g.brushSize(), off = Math.floor((size - 1) / 2);
+      vctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+      vctx.lineWidth = 1;
+      vctx.strokeRect(cam.ox + (hover[0] - off) * s + 0.5, cam.oy + (hover[1] - off) * s + 0.5, size * s - 1, size * s - 1);
     }
   }
 
-  const canvas = $('canvas');
-  const ctx = canvas.getContext('2d');
-  function fitCanvas(units) {
-    const stage = $('stage');
-    const size = Math.min(stage.clientWidth - 48, stage.clientHeight - 84);
-    const cell = Math.max(1, Math.floor(size / units));
-    if (canvas.width !== cell * units) canvas.width = canvas.height = cell * units;
-    return cell;
+  function render(now) {
+    vctx.fillStyle = '#070a14';
+    vctx.fillRect(0, 0, view.width, view.height);
+    vctx.imageSmoothingEnabled = false;
+    vctx.drawImage(display, cam.ox, cam.oy, W * cam.scale, H * cam.scale);
+    if (living) living.draw(vctx, { scale: cam.scale, offsetX: cam.ox, offsetY: cam.oy }, now);
+    drawEffects(now);
   }
 
-  const dots = {};
-  function drawDots(pic, cell, now) {
-    const size = Math.min(8, Math.max(2, Math.floor(cell / 6)));
-    TYPES.forEach((type, t) => {
-      const cells = g.targets(type);
-      const count = Math.min(g.state.fairies[type], CONFIG.ui.maxFairyDots);
-      const list = dots[type] || (dots[type] = []);
-      list.length = cells.length ? count : 0;
-      for (let j = 0; j < list.length; j++) {
-        const i = cells[j % cells.length];
-        const angle = now / 300 + j * 2.4 + t;
-        const tx = (i % pic.tier + 0.5) * cell + Math.cos(angle) * cell * 0.3;
-        const ty = (Math.floor(i / pic.tier) + 0.5) * cell + Math.sin(angle) * cell * 0.3;
-        const d = list[j] || (list[j] = { x: tx, y: ty });
-        d.x += (tx - d.x) * 0.2; d.y += (ty - d.y) * 0.2;
-        ctx.fillStyle = '#000';
-        ctx.fillRect(Math.round(d.x - size / 2) - 1, Math.round(d.y - size / 2) - 1, size + 2, size + 2);
-        ctx.fillStyle = DOT_COLORS[type] || '#fff';
-        ctx.fillRect(Math.round(d.x - size / 2), Math.round(d.y - size / 2), size, size);
-      }
-    });
+  function toast(text) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = text;
+    $('toasts').append(el);
+    while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
+    setTimeout(() => el.remove(), 3600);
   }
 
-  function drawMosaic() {
-    const done = g.state.gallery.map((id) => BY_ID.get(id));
-    const cols = Math.ceil(Math.sqrt(done.length));
-    const maxTier = Math.max(...done.map((p) => p.tier));
-    const unit = fitCanvas(cols * maxTier); // 가장 큰 그림의 한 칸 크기
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    done.forEach((pic, n) => {
-      const tile = unit * maxTier;
-      paintPicture(ctx, pic, (n % cols) * tile, Math.floor(n / cols) * tile, tile / pic.tier);
-    });
-  }
-
-  function drawStage(now) {
-    const s = g.state;
-    const overlay = $('overlay');
-    const pic = g.picture();
-    $('strokeButton').hidden = !pic;
-    overlay.hidden = !!pic;
-    overlay.classList.toggle('ending', s.finished);
-    $('prestigeButton').hidden = s.finished;
-    canvas.style.cursor = pic ? 'crosshair' : 'default';
-    if (pic) {
-      const cell = fitCanvas(pic.tier);
-      const required = g.cellRequired();
-      paintPicture(ctx, pic, 0, 0, cell, (i) => (g.isCellDone(i) ? 1 : s.work[i] / required));
-      drawDots(pic, cell, now);
-    } else if (s.finished) {
-      drawMosaic();
-      $('overlayText').textContent = `모든 그림을 되살렸습니다. 색을 되찾은 ${s.gallery.length}장이 한 폭으로 모였습니다.`;
-    } else {
-      const last = PICS[s.pictureIndex];
-      const next = PICS[s.pictureIndex + 1];
-      paintPicture(ctx, last, 0, 0, fitCanvas(last.tier));
-      $('overlayText').textContent = `${last.tier}x${last.tier} 그림을 모두 되살렸습니다.\n`
-        + `더 고운 눈을 뜨면 ${next.tier}x${next.tier} 그림이 보입니다.\n`
-        + '물감 방울, 요정, 강화는 사라지고 갤러리와 눈은 남습니다.';
-    }
-  }
-
-  // ---------- 위쪽 띠, 갤러리 ----------
+  // ---------- 위쪽 띠와 강화 패널 ----------
   function drawTop() {
-    const s = g.state;
-    const pic = g.picture();
-    $('drops').textContent = fmt(s.drops);
-    $('rate').textContent = fmtRate(g.workPerSecond());
-    if (pic) {
-      const p = g.progress();
-      $('pictureTitle').textContent = `${pic.title}, ${pic.artist}, ${pic.year}`;
-      $('pictureProgress').textContent = `그림 ${s.gallery.length + 1}/${PICS.length}, ${p.done}/${p.total}칸`;
-    } else {
-      $('pictureTitle').textContent = s.finished ? '모든 그림을 되살렸습니다' : '더 고운 눈을 기다리는 중';
-      $('pictureProgress').textContent = `그림 ${s.gallery.length}/${PICS.length}`;
-    }
+    const p = g.progress();
+    $('points').textContent = fmt(g.state.points);
+    $('hand').textContent = `${fmtRate(g.handRate())}/초`;
+    $('handBudget').textContent = `남은 ${Math.floor(g.handBudget())}`;
+    $('fairy').textContent = g.fairyCount()
+      ? `${g.fairyCount()}마리, ${fmtRate(g.fairyRate())}/초`
+      : (g.fairiesUnlocked() ? '고용 가능' : '아직 없음');
+    $('percent').textContent = `${(Math.floor((p.painted / p.total) * 10000) / 100).toFixed(2)}%`;
+    $('count').textContent = `${p.painted.toLocaleString()} / ${p.total.toLocaleString()} 픽셀`;
   }
 
-  function drawGallery() {
-    if (galleryShown === g.state.gallery.length) return;
-    galleryShown = g.state.gallery.length;
-    const box = $('gallery');
-    box.querySelectorAll('.thumb').forEach((el) => el.remove());
-    $('galleryEmpty').hidden = galleryShown > 0;
-    for (const id of g.state.gallery) {
-      const pic = BY_ID.get(id);
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'thumb';
-      button.title = `${pic.title}, ${pic.artist}, ${pic.year}`;
-      button.setAttribute('aria-label', button.title);
-      const c = document.createElement('canvas');
-      c.width = c.height = pic.tier;
-      paintPicture(c.getContext('2d'), pic, 0, 0, 1);
-      button.append(c);
-      box.append(button);
-    }
-    box.scrollLeft = box.scrollWidth;
-  }
-
-  // ---------- 오른쪽 패널 ----------
-  const maxed = (config, level) => level >= (config.maxLevel || Infinity);
-  const ITEMS = {
-    fairies: () => TYPES.map((type) => ({
-      id: type, unit: '방울',
-      count: () => `${g.state.fairies[type]}마리`,
-      cost: () => g.fairyCost(type), funds: () => g.state.drops, buy: () => g.buyFairy(type), done: () => false,
-    })),
-    upgrades: () => Object.keys(CONFIG.upgrades).map((id) => ({
-      id, unit: '방울',
-      count: () => (CONFIG.upgrades[id].maxLevel === 1 ? '' : `${g.state.upgrades[id] || 0}단계`),
-      cost: () => g.upgradeCost(id), funds: () => g.state.drops, buy: () => g.buyUpgrade(id),
-      done: () => maxed(CONFIG.upgrades[id], g.state.upgrades[id] || 0),
-    })),
-    eyes: () => Object.keys(CONFIG.eyeUpgrades).map((id) => ({
-      id, unit: '눈',
-      count: () => (CONFIG.eyeUpgrades[id].maxLevel === 1 ? '' : `${g.state.eyeUpgrades[id] || 0}단계`),
-      cost: () => g.eyeUpgradeCost(id), funds: () => g.state.eyes, buy: () => g.buyEyeUpgrade(id),
-      done: () => maxed(CONFIG.eyeUpgrades[id], g.state.eyeUpgrades[id] || 0),
-    })),
-  };
-
-  function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text) node.textContent = text;
-    return node;
-  }
-
+  const rows = [];
   function buildList() {
     const list = $('list');
     list.replaceChildren();
-    rows = [];
-    if (tab === 'eyes') {
-      const eyes = el('p', 'eyes');
-      list.append(eyes, el('p', 'note', '한 해상도의 그림을 모두 되살리면 더 고운 눈을 뜰 수 있습니다. 그때 얻는 눈으로 사라지지 않는 강화를 삽니다.'));
-      rows.push(() => { eyes.textContent = `눈 ${fmt(g.state.eyes)}개`; });
-    }
-    for (const item of ITEMS[tab]()) {
-      const row = el('div', 'item');
-      const head = el('div');
-      const count = el('span', 'count');
-      head.append(el('span', 'name', NAMES[item.id] || item.id), ' ', count);
-      const button = el('button');
+    rows.length = 0;
+    for (const id of Object.keys(CONFIG.upgrades)) {
+      const row = document.createElement('div');
+      row.className = 'item';
+      const head = document.createElement('div');
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = NAMES[id] || id;
+      const count = document.createElement('span');
+      count.className = 'count';
+      head.append(name, ' ', count);
+      const button = document.createElement('button');
       button.type = 'button';
-      button.addEventListener('click', () => { item.buy(); });
-      row.append(head, button, el('div', 'desc', DESCRIPTIONS[item.id] || ''));
+      button.addEventListener('click', () => { g.buy(id); });
+      const desc = document.createElement('div');
+      desc.className = 'desc';
+      row.append(head, button, desc);
       list.append(row);
       rows.push(() => {
-        const done = item.done();
-        count.textContent = item.count();
-        button.textContent = done ? '완료' : `${fmt(Math.ceil(item.cost()))} ${item.unit}`;
-        button.disabled = done || item.funds() < item.cost();
+        const locked = g.isLocked(id);
+        const max = CONFIG.upgrades[id].maxLevel;
+        const done = max !== undefined && g.level(id) >= max;
+        row.classList.toggle('locked', locked);
+        count.textContent = id === 'fairyHire' ? `${g.level(id)}마리` : `${g.level(id)}단계`;
+        desc.textContent = locked
+          ? `칠한 픽셀이 ${CONFIG.fairies.unlockAtPainted.toLocaleString()}개를 넘으면 열립니다.`
+          : DESCRIPTIONS[id];
+        button.textContent = locked ? '잠김' : done ? '최대' : fmt(Math.ceil(g.cost(id)));
+        button.disabled = !g.canBuy(id);
       });
     }
   }
 
-  document.querySelectorAll('#tabs button').forEach((button) => {
-    button.addEventListener('click', () => {
-      tab = button.dataset.tab;
-      document.querySelectorAll('#tabs button').forEach((b) => b.setAttribute('aria-selected', String(b === button)));
-      buildList();
-    });
-  });
-
-  // ---------- 입력 ----------
-  let visited = null; // 한 번 끄는 동안 이미 칠한 칸
-  function strokeAt(event) {
-    const pic = g.picture();
-    if (!pic) return;
-    const x = Math.floor((event.offsetX / canvas.clientWidth) * pic.tier);
-    const y = Math.floor((event.offsetY / canvas.clientHeight) * pic.tier);
-    const key = y * pic.tier + x;
-    if (visited.has(key)) return;
-    visited.add(key);
-    g.click(x, y);
+  // ---------- 끝 ----------
+  function showFinish() {
+    finishedShown = true;
+    fit();
+    $('finishText').textContent = `걸린 시간 ${fmtTime(g.state.time)}, 찍은 픽셀 ${g.total.toLocaleString()}개. 이제 그림이 살아 움직입니다.`;
+    $('finish').hidden = false;
   }
-  canvas.addEventListener('pointerdown', (event) => {
-    visited = new Set();
-    canvas.setPointerCapture(event.pointerId);
-    strokeAt(event);
-  });
-  canvas.addEventListener('pointermove', (event) => { if (visited) strokeAt(event); });
-  const endStroke = () => { visited = null; };
-  canvas.addEventListener('pointerup', endStroke);
-  canvas.addEventListener('pointercancel', endStroke);
+  $('closeFinish').addEventListener('click', () => { $('finish').hidden = true; });
 
-  // 키보드로도 칠할 수 있게: 안 끝난 첫 칸에 붓질 한 번.
-  $('strokeButton').addEventListener('click', () => {
-    const pic = g.picture();
-    const i = pic && g.targets('brush')[0];
-    if (pic && i !== undefined) g.click(i % pic.tier, Math.floor(i / pic.tier));
-  });
-  $('prestigeButton').addEventListener('click', () => { if (g.prestige()) { buildList(); save(); } });
+  function handleEvents() {
+    for (const e of g.drainEvents()) {
+      const region = g.regions[e.region];
+      if (e.type === 'regionStarted' && g.state.paintedCount > 1) toast(`${region.name} 영역을 칠하기 시작했습니다`);
+      else if (e.type === 'regionCompleted') toast(`${region.name} 영역을 다 채웠습니다`);
+      else if (e.type === 'fairiesUnlocked') toast('요정이 찾아왔습니다. 이제 고용할 수 있습니다');
+      else if (e.type === 'finished') showFinish();
+    }
+  }
 
-  // ---------- 설정, 알림 ----------
-  function notice(text) { $('noticeText').textContent = text; $('notice').showModal(); }
-  $('closeNotice').addEventListener('click', () => $('notice').close());
-  $('openSettings').addEventListener('click', () => {
-    $('settingsMessage').textContent = '';
-    $('saveText').value = '';
-    $('settings').showModal();
-  });
+  // ---------- 설정 ----------
+  const message = (text) => { $('settingsMessage').textContent = text; };
+  const BAD = '저장 문자열이 올바르지 않습니다. 지금 진행은 그대로입니다.';
+  $('openSettings').addEventListener('click', () => { message(''); $('saveText').value = ''; $('settings').showModal(); });
   $('closeSettings').addEventListener('click', () => $('settings').close());
   $('exportSave').addEventListener('click', () => {
     save();
-    $('saveText').value = Save.serialize(g.state);
+    $('saveText').value = Save.serialize(g);
     $('saveText').select();
-    $('settingsMessage').textContent = '문자열을 복사해 보관하세요.';
+    message('문자열을 복사해 보관하세요.');
   });
-  $('importSave').addEventListener('click', () => {
-    const loaded = Save.deserialize($('saveText').value.trim(), PICTURES);
-    if (!loaded) { $('settingsMessage').textContent = '저장 문자열이 올바르지 않습니다. 지금 진행은 그대로입니다.'; return; }
+  $('downloadSave').addEventListener('click', () => {
+    const url = URL.createObjectURL(new Blob([Save.serialize(g)], { type: 'text/plain' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'starry-night-save.txt';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    message('파일로 받았습니다.');
+  });
+  function importText(text) {
+    const loaded = Save.deserialize(String(text).trim(), CONFIG);
+    if (!loaded) { message(BAD); return; }
     start(loaded);
     save();
-    $('settingsMessage').textContent = '불러왔습니다.';
+    message('불러왔습니다.');
+  }
+  $('importSave').addEventListener('click', () => importText($('saveText').value));
+  $('importFile').addEventListener('click', () => $('fileInput').click());
+  $('fileInput').addEventListener('change', () => {
+    const file = $('fileInput').files[0];
+    $('fileInput').value = '';
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) { message(BAD); return; } // 저장 파일은 이보다 훨씬 작다
+    const reader = new FileReader();
+    reader.onload = () => importText(reader.result);
+    reader.onerror = () => message(BAD);
+    reader.readAsText(file);
   });
   $('resetSave').addEventListener('click', () => {
-    if (!window.confirm('모든 진행을 지우고 처음부터 시작할까요? 되돌릴 수 없습니다.')) return;
+    if (!window.confirm('칠한 픽셀과 강화를 모두 지우고 처음부터 시작할까요? 되돌릴 수 없습니다.')) return;
     start(null);
     save();
-    $('settingsMessage').textContent = '처음부터 다시 시작합니다.';
+    message('처음부터 다시 시작합니다.');
   });
 
   // ---------- 시작과 루프 ----------
-  start(Save.load(storage, CONFIG, PICTURES));
-  const away = Save.applyOffline(g, Date.now(), CONFIG);
-  if (away.cells > 0) {
-    notice(`자리를 비운 동안 요정들이 ${fmt(away.cells)}칸을 칠했습니다.`
-      + (away.pictures ? ` 그림 ${away.pictures}장을 완성했습니다.` : ''));
+  function start(saved) {
+    g = Game.create(CONFIG, REGIONS, saved || undefined);
+    g.drainEvents(); g.drainPainted(); g.drainFairyPainted();
+    rebuildDisplay();
+    living = typeof Living !== 'undefined' ? Living.create(g, colorData) : null;
+    finishedShown = false;
+    $('finish').hidden = true;
+    sparkles.length = 0; dots.length = 0; fairyTargets.length = 0;
+    buildList();
+    fit();
+    minimapAt = -1e9;
+    if (g.state.paintedCount === g.total) showFinish();
   }
 
-  let last = performance.now();
-  let sinceSave = 0;
+  let lastFrame = 0, sinceSave = 0;
   function frame(now) {
-    // 탭이 가려졌다 돌아오면 dt가 크다. 규칙 쪽이 잘게 나눠 처리한다.
-    const dt = Math.min(Math.max(0, (now - last) / 1000), CONFIG.offline.maxSeconds);
-    last = now;
-    g.tick(dt);
-    sinceSave += dt;
+    const dt = lastFrame ? (now - lastFrame) / 1000 : 0;
+    lastFrame = now;
+    step(now, dt);
+    if (dt > 0 && dt <= CONFIG.frame.maxGapSeconds) sinceSave += dt;
     if (sinceSave >= CONFIG.save.intervalSeconds) { sinceSave = 0; save(); }
-    drawStage(now);
-    drawTop();
-    drawGallery();
-    for (const update of rows) update();
     requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
-  window.addEventListener('pagehide', save); // 새로 고침이나 창 닫기에서는 위 이벤트가 안 올 수 있다
+  function step(now, dt) {
+    g.tick(dt); // 절전 등으로 생긴 큰 간격은 규칙이 버린다
+    applyPainted(g.drainPainted());
+    for (const i of g.drainFairyPainted()) fairyTargets.push(i);
+    if (fairyTargets.length > 200) fairyTargets.splice(0, fairyTargets.length - 200);
+    handleEvents();
+    render(now);
+    drawMinimap(now);
+    drawTop();
+    for (const update of rows) update();
+  }
+
+  const img = new Image();
+  img.onload = () => {
+    prepareImages(img);
+    resize();
+    start(Save.load(storage, CONFIG));
+    window.addEventListener('resize', resize);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+    window.addEventListener('pagehide', save); // 새로 고침이나 창 닫기
+    requestAnimationFrame(frame);
+  };
+  img.src = PAINTING_IMAGE;
 
   // 콘솔에서 상태를 들여다보거나 시험할 때 쓴다.
-  window.lostCanvas = { get game() { return g; } };
+  window.starry = {
+    get game() { return g; },
+    // 화면 갱신과 상관없이 프레임 작업 n번의 평균 시간(ms)을 잰다. 창이 가려져 있어도 쓸 수 있다.
+    bench(n = 60, dt = 1 / 60) {
+      const t0 = performance.now();
+      for (let k = 0; k < n; k++) step(t0 + k * dt * 1000, dt);
+      return (performance.now() - t0) / n;
+    },
+    // 손 예산을 무시하고 영역 하나를 통째로 칠한다(연출 확인용).
+    fillRegion(id) {
+      const r = g.regions.findIndex((x) => x.id === id);
+      const keep = g.state.upgrades.handSpeed;
+      g.state.upgrades.handSpeed = 1e8;
+      g.tick(1);
+      for (let i = 0; i < g.total; i++) if (g.regionIndex[i] === r && !g.painted[i]) g.paint(i % W, Math.floor(i / W));
+      if (keep === undefined) delete g.state.upgrades.handSpeed; else g.state.upgrades.handSpeed = keep;
+      return g.regions[r];
+    },
+  };
 })();

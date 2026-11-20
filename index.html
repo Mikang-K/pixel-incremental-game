@@ -3,60 +3,58 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>색을 잃은 캔버스</title>
+  <title>별이 빛나는 밤</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header id="top">
-    <h1>색을 잃은 캔버스</h1>
-    <div class="stat"><span class="label">물감 방울</span><strong id="drops">0</strong></div>
-    <div class="stat"><span class="label">요정 작업량</span><strong id="rate">0</strong><span class="label">초당</span></div>
-    <div class="stat wide"><span id="pictureTitle"></span><span id="pictureProgress" class="label"></span></div>
+    <h1>별이 빛나는 밤</h1>
+    <div class="stat"><span class="label">포인트</span><strong id="points">0</strong></div>
+    <div class="stat"><span class="label">손</span><strong id="hand">0</strong><span class="label" id="handBudget"></span></div>
+    <div class="stat"><span class="label">요정</span><strong id="fairy">아직 없음</strong></div>
+    <div class="stat wide"><strong id="percent">0.00%</strong><span class="label" id="count"></span></div>
     <button id="openSettings" type="button">설정</button>
   </header>
 
   <main>
-    <section id="stage" aria-label="캔버스">
-      <canvas id="canvas" aria-label="복원 중인 그림. 칸을 누르거나 끌어서 칠합니다."></canvas>
-      <div id="overlay" hidden>
-        <p id="overlayText"></p>
-        <button id="prestigeButton" type="button" class="primary">더 고운 눈을 뜬다</button>
+    <section id="stage" aria-label="그림">
+      <canvas id="view" aria-label="복원 중인 그림. 왼쪽 버튼으로 누르거나 끌어서 칠하고, 휠로 확대하고, 오른쪽 버튼이나 스페이스를 누른 채 끌어서 옮깁니다."></canvas>
+      <div id="toasts" aria-live="polite"></div>
+      <p id="hint" class="label">왼쪽 버튼: 칠하기, 휠: 확대, 오른쪽 버튼 또는 스페이스+끌기: 옮기기</p>
+      <div id="finish" hidden>
+        <h2>모든 픽셀을 되살렸습니다</h2>
+        <p id="finishText"></p>
+        <button id="closeFinish" type="button" class="primary">그림 감상하기</button>
       </div>
-      <button id="strokeButton" type="button" title="다음 칸에 붓질 한 번. 키보드로 칠할 때 씁니다.">붓질하기</button>
     </section>
 
     <aside id="panel">
-      <div id="tabs" role="tablist">
-        <button type="button" role="tab" data-tab="fairies" aria-selected="true">요정</button>
-        <button type="button" role="tab" data-tab="upgrades" aria-selected="false">강화</button>
-        <button type="button" role="tab" data-tab="eyes" aria-selected="false">눈</button>
-      </div>
-      <div id="list" role="tabpanel"></div>
+      <canvas id="minimap" aria-label="전체 지도. 누르면 그 자리로 옮깁니다."></canvas>
+      <div id="list"></div>
     </aside>
   </main>
 
-  <footer id="gallery" aria-label="갤러리"><span id="galleryEmpty" class="label">완성한 그림이 여기에 걸립니다.</span></footer>
-
   <dialog id="settings">
     <h2>설정</h2>
-    <p class="label">진행은 이 브라우저에 자동으로 저장됩니다. 다른 곳으로 옮기려면 문자열을 내보내세요.</p>
-    <textarea id="saveText" rows="6" aria-label="저장 문자열" spellcheck="false"></textarea>
+    <p class="label">진행은 이 브라우저에 자동으로 저장됩니다. 다른 곳으로 옮기려면 내보내기를 쓰세요.</p>
+    <textarea id="saveText" rows="5" aria-label="저장 문자열" spellcheck="false"></textarea>
     <p id="settingsMessage" role="status"></p>
     <div class="row">
-      <button id="exportSave" type="button">내보내기</button>
-      <button id="importSave" type="button">가져오기</button>
+      <button id="exportSave" type="button">문자열 내보내기</button>
+      <button id="downloadSave" type="button">파일로 받기</button>
+      <button id="importSave" type="button">문자열 가져오기</button>
+      <button id="importFile" type="button">파일에서 불러오기</button>
+      <input id="fileInput" type="file" accept=".txt,text/plain" hidden>
+    </div>
+    <div class="row end">
       <button id="resetSave" type="button" class="danger">초기화</button>
       <button id="closeSettings" type="button">닫기</button>
     </div>
   </dialog>
 
-  <dialog id="notice">
-    <p id="noticeText"></p>
-    <button id="closeNotice" type="button" class="primary">확인</button>
-  </dialog>
-
   <script src="js/config.js"></script>
-  <script src="js/pictures.js"></script>
+  <script src="js/regions.js"></script>
+  <script src="js/painting-image.js"></script>
   <script src="js/game.js"></script>
   <script src="js/save.js"></script>
   <script src="js/ui.js"></script>
