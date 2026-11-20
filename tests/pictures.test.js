@@ -30,3 +30,5 @@ test('단계마다 색 규칙 세 계열이 모두 한 번 이상 나온다', ()
   }
 });
 test('8x8 그림은 8장', () => assert.equal(count(8), 8));
+test('16x16 그림은 8장', () => assert.equal(count(16), 8));
+test('32x32 그림은 6장', () => assert.equal(count(32), 6));
