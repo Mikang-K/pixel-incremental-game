@@ -1,88 +1,110 @@
 'use strict';
-// 화면 없이 게임을 끝까지 돌려 단계별 소요 시간을 본다. js/config.js를 조정할 때 쓴다.
-// 사용: node tools/simulate.js [초당 클릭 수=3]
+// 화면 없이 게임을 끝까지 돌려 속도를 본다. js/config.js의 숫자를 조정할 때 쓴다.
+// 사용: node tools/simulate.js
+// 기준 플레이어(설계 문서 5장): 요정이 손보다 느린 동안은 매초 50% 확률로, 그 뒤에는 10% 확률로
+// 그 초에 손 예산만큼 칠한다. 칠할 자리는 시작했지만 덜 채운 영역 중 가장 작은 곳(없으면 가장 작은 새 영역).
+// 매초 살 수 있는 가장 싼 강화를 산다.
 const CONFIG = require('../js/config.js');
-const PICTURES = require('../js/pictures.js');
+const REGIONS = require('../js/regions.js');
 const Game = require('../js/game.js');
 
-// 설계 문서 5장의 목표. 단계별 [최소, 최대] 분.
-const TIER_MINUTES = [[15, 30], [30, 55], [50, 90]];
-const TOTAL_MIN_MINUTES = 120;
-const MAX_IDLE_GAP_SECONDS = 180; // 구매도 그림 완성도 없이 기다리기만 하는 구간의 한도
-const GIVE_UP_SECONDS = 24 * 3600;
+// 통과 기준 (설계 문서 5장과 계획 Task 8)
+const LIMITS = {
+  firstPurchase: [0, 60], // 초
+  firstRegion: [0, 600], // 초
+  unlock: [45 * 60, 90 * 60], // 초
+  progressAt1h: [0, 0.1], // 비율
+  crossoverShare: [0.15, 0.5], // 전체 시간 중 요정이 손보다 빨라지는 시점(중간보다 늦으면 손 노동이 너무 길다)
+  total: [15 * 3600, 25 * 3600], // 초
+  longestGap: [0, 300], // 구매나 영역 완성 사이 최장 대기(초)
+};
+const GIVE_UP = 60 * 3600;
 
-function run(CONFIG, clicksPerSecond, giveUpSeconds = GIVE_UP_SECONDS) {
-const g = Game.create(CONFIG, PICTURES);
-const firstType = Object.keys(CONFIG.fairies)[0];
+function run(config = CONFIG, { seed = 7, giveUp = GIVE_UP } = {}) {
+  const g = Game.create({ ...config, seed }, REGIONS);
+  let rng = seed >>> 0;
+  const rand = () => { rng = (rng * 1664525 + 1013904223) >>> 0; return rng / 4294967296; };
 
-// 살 수 있는 것 중 가장 싼 것을 산다. 산 것이 있으면 true.
-function buyCheapest(options) {
-  let bought = false;
-  for (;;) {
-    const open = options.filter((o) => !o.done()).sort((a, b) => a.cost() - b.cost())[0];
-    if (!open || !open.buy()) return bought;
-    bought = true;
+  // 영역마다 픽셀 목록과 다음에 볼 위치
+  const pixels = g.regions.map(() => []);
+  for (let i = 0; i < g.total; i++) pixels[g.regionIndex[i]].push(i);
+  const cursor = g.regions.map(() => 0);
+  const bySize = g.regions.map((_, r) => r).sort((a, b) => g.regions[a].size - g.regions[b].size);
+  function nextHandPixel() {
+    const started = bySize.find((r) => g.regions[r].painted > 0 && g.regions[r].painted < g.regions[r].size);
+    const r = started !== undefined ? started : bySize.find((r) => g.regions[r].painted === 0);
+    if (r === undefined) return -1;
+    while (cursor[r] < pixels[r].length && g.painted[pixels[r][cursor[r]]]) cursor[r]++;
+    return cursor[r] < pixels[r].length ? pixels[r][cursor[r]] : -1;
   }
-}
-const maxed = (config, level) => level >= (config.maxLevel || Infinity);
-const shop = [
-  ...Object.keys(CONFIG.fairies).map((t) => ({ cost: () => g.fairyCost(t), buy: () => g.buyFairy(t), done: () => false })),
-  ...Object.keys(CONFIG.upgrades).map((id) => ({
-    cost: () => g.upgradeCost(id), buy: () => g.buyUpgrade(id), done: () => maxed(CONFIG.upgrades[id], g.state.upgrades[id] || 0),
-  })),
-];
-const eyeShop = Object.keys(CONFIG.eyeUpgrades).map((id) => ({
-  cost: () => g.eyeUpgradeCost(id), buy: () => g.buyEyeUpgrade(id), done: () => maxed(CONFIG.eyeUpgrades[id], g.state.eyeUpgrades[id] || 0),
-}));
 
-let t = 0, lastEvent = 0, longestGap = 0, gapAt = 0, tierStart = 0;
-const tierSeconds = [];
-while (!g.state.finished && t < giveUpSeconds) {
-  for (let i = 0; i < clicksPerSecond; i++) {
-    const pic = g.picture();
-    const cell = pic && g.targets(firstType)[0];
-    if (cell === undefined || cell === null) break;
-    g.click(cell % pic.tier, Math.floor(cell / pic.tier));
-  }
-  const gallery = g.state.gallery.length;
-  g.tick(1);
-  t++;
-  let event = g.state.gallery.length !== gallery;
-  if (buyCheapest(shop)) event = true;
-  if (g.canPrestige()) {
-    tierSeconds.push(t - tierStart);
-    tierStart = t;
-    g.prestige();
-    buyCheapest(eyeShop);
-    event = true;
-  }
-  if (event) {
-    if (t - lastEvent > longestGap) { longestGap = t - lastEvent; gapAt = t; }
+  const ids = Object.keys(config.upgrades);
+  const out = { firstPurchase: null, firstRegion: null, unlock: null, crossover: null, progressAt1h: null, longestGap: 0, gapAt: 0 };
+  let t = 0, lastEvent = 0;
+  const event = () => {
+    if (t - lastEvent > out.longestGap) { out.longestGap = t - lastEvent; out.gapAt = t; }
     lastEvent = t;
+  };
+
+  while (g.state.paintedCount < g.total && t < giveUp) {
+    const fairyAhead = g.fairyRate() > g.handRate();
+    if (fairyAhead && out.crossover === null) out.crossover = t;
+    if (rand() < (fairyAhead ? 0.1 : 0.5)) {
+      while (g.handBudget() >= 1) {
+        const i = nextHandPixel();
+        if (i < 0 || !g.paint(i % g.width, Math.floor(i / g.width))) break;
+      }
+    }
+    g.tick(1);
+    t++;
+    for (const e of g.drainEvents()) {
+      if (e.type === 'regionCompleted') { if (out.firstRegion === null) out.firstRegion = t; event(); }
+      if (e.type === 'fairiesUnlocked') out.unlock = t;
+    }
+    g.drainPainted(); g.drainFairyPainted();
+    for (;;) {
+      const open = ids.filter((id) => g.canBuy(id)).sort((a, b) => g.cost(a) - g.cost(b))[0];
+      if (!open) break;
+      g.buy(open);
+      if (out.firstPurchase === null) out.firstPurchase = t;
+      event();
+    }
+    if (t === 3600) out.progressAt1h = g.state.paintedCount / g.total;
   }
-}
-if (g.state.finished) tierSeconds.push(t - tierStart);
-return { finished: g.state.finished, t, tierSeconds, longestGap, gapAt };
-}
-
-function report(clicksPerSecond) {
-const { finished, t, tierSeconds, longestGap, gapAt } = run(CONFIG, clicksPerSecond);
-const problems = [];
-const minutes = (s) => (s / 60).toFixed(1);
-console.log(`초당 클릭 ${clicksPerSecond}회`);
-tierSeconds.forEach((s, i) => {
-  const range = TIER_MINUTES[i];
-  const ok = !range || (s / 60 >= range[0] && s / 60 <= range[1]);
-  console.log(`  ${i + 1}단계: ${minutes(s)}분${range ? ` (목표 ${range[0]}에서 ${range[1]}분)` : ''}${ok ? '' : '  <- 범위 밖'}`);
-  if (!ok) problems.push(`${i + 1}단계`);
-});
-console.log(`  합계: ${minutes(t)}분 (목표 ${TOTAL_MIN_MINUTES}분 이상)`);
-console.log(`  가장 긴 빈 구간: ${longestGap}초, ${minutes(gapAt)}분 무렵 (한도 ${MAX_IDLE_GAP_SECONDS}초)`);
-if (!finished) problems.push('24시간 안에 끝나지 않음');
-if (t / 60 < TOTAL_MIN_MINUTES) problems.push('합계');
-if (longestGap > MAX_IDLE_GAP_SECONDS) problems.push('빈 구간');
-if (problems.length) { console.log(`실패: ${problems.join(', ')}`); process.exitCode = 1; } else console.log('통과');
+  out.finished = g.state.paintedCount === g.total;
+  out.total = t;
+  out.crossoverShare = out.crossover === null ? null : out.crossover / t;
+  out.levels = { ...g.state.upgrades };
+  return out;
 }
 
-if (require.main === module) report(Number(process.argv[2] || 3));
-module.exports = { run, TIER_MINUTES, TOTAL_MIN_MINUTES, MAX_IDLE_GAP_SECONDS };
+function check(r) {
+  return Object.entries(LIMITS).map(([key, [lo, hi]]) => {
+    const v = r[key];
+    return { key, value: v, ok: v !== null && v !== undefined && v >= lo && v <= hi, lo, hi };
+  });
+}
+
+function report() {
+  const r = run();
+  const show = (key, v) => {
+    if (v === null || v === undefined) return '없음';
+    if (key === 'progressAt1h' || key === 'crossoverShare') return `${(v * 100).toFixed(1)}%`;
+    return v >= 3600 ? `${(v / 3600).toFixed(2)}시간` : v >= 60 ? `${(v / 60).toFixed(1)}분` : `${v}초`;
+  };
+  const names = {
+    firstPurchase: '첫 구매', firstRegion: '첫 영역 완성', unlock: '요정 열림', progressAt1h: '1시간 진행률',
+    crossoverShare: '요정이 손을 앞서는 시점', total: '완성까지', longestGap: '최장 대기',
+  };
+  const results = check(r);
+  for (const c of results) {
+    console.log(`${c.ok ? '  ' : '✗ '}${names[c.key]}: ${show(c.key, c.value)} (기준 ${show(c.key, c.lo)}에서 ${show(c.key, c.hi)})`);
+  }
+  console.log(`  최장 대기 위치: ${show('t', r.gapAt)} 무렵, 끝난 강화 단계: ${JSON.stringify(r.levels)}`);
+  const failed = results.filter((c) => !c.ok);
+  if (!r.finished) console.log(`✗ ${GIVE_UP / 3600}시간 안에 끝나지 않음`);
+  if (failed.length || !r.finished) { console.log('실패'); process.exitCode = 1; } else console.log('통과');
+}
+
+if (require.main === module) report();
+module.exports = { run, check, LIMITS };
