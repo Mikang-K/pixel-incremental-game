@@ -48,7 +48,101 @@ const Game = (function () {
     return { index, sizes };
   }
 
-  return { rasterizeRegions };
+  function create(config, regionList, saved) {
+    const width = config.painting.width, height = config.painting.height, total = width * height;
+    const { index: regionIndex, sizes } = rasterizeRegions(regionList, width, height);
+    const regions = regionList.map((r, i) => ({ id: r.id, name: r.name, effect: r.effect, size: sizes[i], painted: 0 }));
+    const painted = new Uint8Array(total);
+    const state = {
+      points: saved ? saved.points : 0,
+      upgrades: saved ? { ...saved.upgrades } : {},
+      time: saved ? saved.time : 0,
+      paintedCount: 0,
+    };
+    let paintedLog = [];
+    let events = [];
+
+    if (saved) {
+      painted.set(saved.painted);
+      for (let i = 0; i < total; i++) if (painted[i]) { state.paintedCount++; regions[regionIndex[i]].painted++; }
+    }
+
+    const level = (id) => state.upgrades[id] || 0;
+    const handRate = () => config.hand.baseRate + config.upgrades.handSpeed.add * level('handSpeed');
+    const handMax = () => handRate() * config.hand.burstSeconds;
+    let budget = handMax();
+    const handBudget = () => budget;
+    const pointsPerPixel = () => config.points.perPixel * config.upgrades.pointsPerPixel.multiplier ** level('pointsPerPixel');
+    const brushSize = () => 1 + level('brushSize');
+
+    // 픽셀 하나를 칠하는 일은 전부 여기를 지난다(손이든 요정이든).
+    function paintPixel(i) {
+      painted[i] = 1;
+      state.paintedCount++;
+      state.points += pointsPerPixel();
+      paintedLog.push(i);
+      const r = regionIndex[i], region = regions[r];
+      region.painted++;
+      if (region.painted === 1) {
+        state.points += config.regions.firstTouchBonus;
+        events.push({ type: 'regionStarted', region: r });
+      }
+      if (region.painted === region.size) {
+        state.points += region.size * config.regions.completeBonusPerPixel;
+        events.push({ type: 'regionCompleted', region: r });
+      }
+      if (state.paintedCount === total) events.push({ type: 'finished' });
+    }
+
+    function paint(x, y) {
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= width || y >= height) return 0;
+      const size = brushSize();
+      let count = 0;
+      for (let dy = 0; dy < size; dy++) {
+        for (let dx = 0; dx < size; dx++) {
+          const px = x + dx, py = y + dy;
+          if (px >= width || py >= height || budget < 1) continue;
+          const i = py * width + px;
+          if (painted[i]) continue;
+          budget--;
+          paintPixel(i);
+          count++;
+        }
+      }
+      return count;
+    }
+
+    function tick(dt) {
+      if (!(dt > 0) || dt > config.frame.maxGapSeconds) return;
+      state.time += dt;
+      budget = Math.min(handMax(), budget + handRate() * dt);
+    }
+
+    const isLocked = (id) => id === 'fairyHire' || id === 'fairySpeed';
+    const cost = (id) => config.upgrades[id].baseCost * config.upgrades[id].costGrowth ** level(id);
+    function canBuy(id) {
+      const upgrade = config.upgrades[id];
+      return !!upgrade && !isLocked(id) && level(id) < (upgrade.maxLevel ?? Infinity) && state.points >= cost(id);
+    }
+    function buy(id) {
+      if (!canBuy(id)) return false;
+      state.points -= cost(id);
+      state.upgrades[id] = level(id) + 1;
+      return true;
+    }
+
+    const progress = () => ({ painted: state.paintedCount, total });
+    const drainPainted = () => { const out = paintedLog; paintedLog = []; return out; };
+    const drainEvents = () => { const out = events; events = []; return out; };
+
+    return {
+      width, height, total, regions, regionIndex, painted, state,
+      paint, tick, handRate, handBudget, pointsPerPixel, brushSize,
+      level, cost, canBuy, buy, isLocked, progress, drainPainted, drainEvents,
+    };
+  }
+
+  return { rasterizeRegions, create };
 })();
 
 if (typeof module !== 'undefined') module.exports = Game;
