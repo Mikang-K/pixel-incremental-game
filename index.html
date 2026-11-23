@@ -18,9 +18,9 @@
 
   <main>
     <section id="stage" aria-label="그림">
-      <canvas id="view" aria-label="복원 중인 그림. 왼쪽 버튼으로 누르거나 끌어서 칠하고, 휠로 확대하고, 오른쪽 버튼이나 스페이스를 누른 채 끌어서 옮깁니다."></canvas>
+      <canvas id="view" tabindex="0" aria-label="복원 중인 그림. 왼쪽 버튼으로 칠하기. WASD 이동, Q 축소, E 확대, Shift 빠른 이동, F 전체 보기. 휠로 확대, 오른쪽 또는 가운데 버튼이나 스페이스를 누른 채 끌어서 이동."></canvas>
       <div id="toasts" aria-live="polite"></div>
-      <p id="hint" class="label">왼쪽 버튼: 칠하기, 휠: 확대, 오른쪽 버튼 또는 스페이스+끌기: 옮기기</p>
+      <p id="hint" class="label">왼쪽 버튼: 칠하기, WASD: 이동, Q/E: 축소/확대, Shift: 빠르게, F: 전체 보기<br>휠: 확대/축소, 오른쪽/가운데 버튼 또는 스페이스+끌기: 이동</p>
       <div id="stale" class="notice" hidden role="alert">
         <h2>다른 탭에서 게임을 저장했습니다</h2>
         <p>이 탭의 진행은 이제 저장되지 않습니다. 새로 고쳐서 최신 진행을 불러오세요.</p>

@@ -143,6 +143,32 @@
   let last = null;
   let spaceDown = false;
   let hover = null;
+  let pointer = null;
+  const cameraKeys = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyF']);
+  const held = new Set();
+  let fastPan = false;
+  let fitPending = false;
+  const keyboardAllowed = () => !$('settings').open && !document.hidden &&
+    (document.activeElement === document.body || document.activeElement === view);
+  function resetInput() {
+    held.clear(); fitPending = false; fastPan = false; spaceDown = false; pointer = null; hover = null;
+    endDrag();
+  }
+  function updateKeyboardCamera(dt) {
+    if (!keyboardAllowed() || mode || !(dt > 0)) return;
+    if (fitPending) { fitPending = false; fit(); return; }
+    dt = Math.min(dt, CONFIG.ui.keyboardMaxFrameSeconds);
+    const dx = Number(held.has('KeyD')) - Number(held.has('KeyA'));
+    const dy = Number(held.has('KeyS')) - Number(held.has('KeyW'));
+    const length = Math.hypot(dx, dy);
+    if (length) {
+      const distance = CONFIG.ui.keyboardPanSpeed * dt * (fastPan ? CONFIG.ui.keyboardFastMultiplier : 1);
+      cam.ox -= dx / length * distance; cam.oy -= dy / length * distance;
+      clampCam();
+    }
+    const zoom = Number(held.has('KeyE')) - Number(held.has('KeyQ'));
+    if (zoom) zoomAt(...(pointer || [view.width / 2, view.height / 2]), CONFIG.ui.keyboardZoomPerSecond ** (zoom * dt));
+  }
 
   function canvasPoint(e) {
     const r = view.getBoundingClientRect();
@@ -167,8 +193,12 @@
 
   view.addEventListener('contextmenu', (e) => e.preventDefault());
   view.addEventListener('pointerdown', (e) => {
+    view.focus({ preventScroll: true });
+    held.clear();
+    fitPending = false;
     view.setPointerCapture(e.pointerId);
     const pt = canvasPoint(e);
+    pointer = pt;
     if (e.button === 1 || e.button === 2 || (e.button === 0 && spaceDown)) {
       mode = 'pan'; last = pt; view.classList.add('panning');
     } else if (e.button === 0 && !finishedShown && !stale) {
@@ -177,6 +207,7 @@
   });
   view.addEventListener('pointermove', (e) => {
     const pt = canvasPoint(e);
+    pointer = pt[0] >= 0 && pt[0] < view.width && pt[1] >= 0 && pt[1] < view.height ? pt : null;
     hover = toPixel(...pt);
     if (mode === 'pan') {
       cam.ox += pt[0] - last[0]; cam.oy += pt[1] - last[1]; last = pt; clampCam();
@@ -189,15 +220,35 @@
   const endDrag = () => { mode = null; last = null; view.classList.remove('panning'); };
   view.addEventListener('pointerup', endDrag);
   view.addEventListener('pointercancel', endDrag);
-  view.addEventListener('pointerleave', () => { hover = null; });
+  view.addEventListener('pointerleave', () => { pointer = null; hover = null; });
+  view.addEventListener('lostpointercapture', endDrag);
   view.addEventListener('wheel', (e) => {
     e.preventDefault();
+    pointer = canvasPoint(e);
     zoomAt(...canvasPoint(e), Math.pow(1.0015, -e.deltaY));
   }, { passive: false });
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'Space' && e.target === document.body) { spaceDown = true; e.preventDefault(); }
+    if (!keyboardAllowed() || e.isComposing || e.ctrlKey || e.altKey || e.metaKey) {
+      held.clear(); fitPending = false; spaceDown = false; return;
+    }
+    fastPan = e.shiftKey;
+    if (e.code === 'Space') { spaceDown = true; e.preventDefault(); }
+    if (cameraKeys.has(e.code) && !mode) {
+      e.preventDefault();
+      if (!e.repeat) {
+        if (e.code === 'KeyF') fitPending = true;
+        else held.add(e.code);
+      }
+    }
   });
-  window.addEventListener('keyup', (e) => { if (e.code === 'Space') spaceDown = false; });
+  window.addEventListener('keyup', (e) => {
+    held.delete(e.code); fastPan = e.shiftKey;
+    if (e.code === 'Space') spaceDown = false;
+  });
+  window.addEventListener('blur', resetInput);
+  document.addEventListener('focusin', () => { if (!keyboardAllowed()) resetInput(); });
+  document.addEventListener('compositionstart', resetInput);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) resetInput(); });
 
   // ---------- 작은 전체 지도 ----------
   const minimap = $('minimap');
@@ -263,6 +314,7 @@
   }
 
   function render(now) {
+    hover = pointer ? toPixel(...pointer) : null;
     vctx.fillStyle = '#070a14';
     vctx.fillRect(0, 0, view.width, view.height);
     vctx.imageSmoothingEnabled = false;
@@ -352,7 +404,7 @@
   // ---------- 설정 ----------
   const message = (text) => { $('settingsMessage').textContent = text; };
   const BAD = '저장 문자열이 올바르지 않습니다. 지금 진행은 그대로입니다.';
-  $('openSettings').addEventListener('click', () => { message(''); $('saveText').value = ''; $('settings').showModal(); });
+  $('openSettings').addEventListener('click', () => { resetInput(); message(''); $('saveText').value = ''; $('settings').showModal(); });
   $('closeSettings').addEventListener('click', () => $('settings').close());
   $('exportSave').addEventListener('click', () => {
     save();
@@ -397,6 +449,7 @@
 
   // ---------- 시작과 루프 ----------
   function start(saved) {
+    resetInput();
     g = Game.create(CONFIG, REGIONS, saved || undefined);
     g.drainEvents(); g.drainPainted(); g.drainFairyPainted();
     rebuildDisplay();
@@ -414,6 +467,7 @@
   function frame(now) {
     const dt = lastFrame ? (now - lastFrame) / 1000 : 0;
     lastFrame = now;
+    updateKeyboardCamera(dt);
     step(now, dt);
     if (dt > 0 && dt <= CONFIG.frame.maxGapSeconds) sinceSave += dt;
     if (sinceSave >= CONFIG.save.intervalSeconds) { sinceSave = 0; save(); }

@@ -17,7 +17,11 @@ const CONFIG = {
   regions: { firstTouchBonus: 25, completeBonusPerPixel: 0.2 },
   frame: { maxGapSeconds: 5 }, // 이보다 긴 프레임 간격(절전 등)은 진행에 넣지 않는다
   save: { intervalSeconds: 10, storageKey: 'starryNightSave' },
-  ui: { maxPixelSize: 24, maxFairyDots: 40 },
+  ui: {
+    maxPixelSize: 24, maxFairyDots: 40,
+    keyboardPanSpeed: 600, keyboardFastMultiplier: 2,
+    keyboardZoomPerSecond: 2, keyboardMaxFrameSeconds: 0.05,
+  },
 };
 
 if (typeof module !== 'undefined') module.exports = CONFIG;
